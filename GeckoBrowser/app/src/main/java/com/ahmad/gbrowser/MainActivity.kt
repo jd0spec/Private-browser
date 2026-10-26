@@ -37,6 +37,29 @@ import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -52,7 +75,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
     companion object {
         var runtime: GeckoRuntime? = null
@@ -70,13 +93,15 @@ class MainActivity : Activity() {
     private lateinit var store: Store
     private lateinit var rt: GeckoRuntime
     private lateinit var geckoView: GeckoView
-    private lateinit var urlBar: EditText
-    private lateinit var progress: ProgressBar
-    private lateinit var topBar: View
-    private lateinit var bottomBar: View
-    private lateinit var tabsBtn: TextView
-    private lateinit var backBtn: TextView
-    private lateinit var fwdBtn: TextView
+    
+    // Compose UI State
+    private var uiUrl by mutableStateOf("")
+    private var uiProgress by mutableStateOf(0)
+    private var uiIsLoading by mutableStateOf(false)
+    private var uiTabCount by mutableStateOf(1)
+    private var uiCanBack by mutableStateOf(false)
+    private var uiCanForward by mutableStateOf(false)
+    private var uiIsFullscreen by mutableStateOf(false)
 
     private val tabs = ArrayList<Tab>()
     private var current = -1
@@ -101,511 +126,538 @@ class MainActivity : Activity() {
         "http", "https", "about", "file", "data", "blob", "javascript",
         "moz-extension", "resource", "view-source", "ws", "wss", "chrome"
     )
-
-    // ------------------------------------------------------------------
-    // Lifecycle
-    // ------------------------------------------------------------------
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        store = Store(this)
+    super.onCreate(savedInstanceState)
+    store = Store(this)
 
-        val freshProcess = runtime == null
-        if (freshProcess) {
-            runtime = GeckoRuntime.create(applicationContext, GeckoRuntimeSettings.Builder().build())
-        }
-        rt = runtime!!
-        rt.webExtensionController.setPromptDelegate(addonPrompt)
-
-        buildUi()
-
-        // If the app was killed last time without a clean exit, run the auto-clear now.
-        val auto = BooleanArray(4) { store.flag(autoKeys[it]) }
-        if (freshProcess && auto.any { it } && store.prefs.getBoolean("dirty", false)) {
-            clearNow(auto, false) {}
-        }
-        store.prefs.edit().putBoolean("dirty", true).apply()
-
-        restoreTabs()
-        handleIntent(intent)
+    val freshProcess = runtime == null
+    if (freshProcess) {
+        runtime = GeckoRuntime.create(applicationContext, GeckoRuntimeSettings.Builder().build())
     }
+    rt = runtime!!
+    rt.webExtensionController.setPromptDelegate(addonPrompt)
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        handleIntent(intent)
-    }
+    geckoView = GeckoView(this)
 
-    private fun handleIntent(i: Intent?) {
-        if (i?.action == Intent.ACTION_VIEW) {
-            val u = i.dataString
-            if (!u.isNullOrEmpty()) newTab(u)
+    setContent {
+        MaterialTheme(
+            colorScheme = lightColorScheme(
+                primary = androidx.compose.ui.graphics.Color(0xFF6750A4),
+                surface = androidx.compose.ui.graphics.Color(0xFFFFFBFE),
+                surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE7E0EC),
+                onSurface = androidx.compose.ui.graphics.Color(0xFF1C1B1F)
+            )
+        ) {
+            BrowserScreen()
         }
     }
 
-    override fun onStop() {
-        super.onStop()
-        if (!skipSave) saveTabs()
+    val auto = BooleanArray(4) { store.flag(autoKeys[it]) }
+    if (freshProcess && auto.any { it } && store.prefs.getBoolean("dirty", false)) {
+        clearNow(auto, false) {}
     }
+    store.prefs.edit().putBoolean("dirty", true).apply()
 
-    override fun onDestroy() {
-        try {
-            geckoView.releaseSession()
-        } catch (e: Exception) {
-        }
-        for (t in tabs) {
-            try {
-                t.session?.let { if (it.isOpen) it.close() }
-            } catch (e: Exception) {
-            }
-            t.session = null
-        }
-        super.onDestroy()
-    }
+    restoreTabs()
+    handleIntent(intent)
+}
 
-    @Deprecated("Deprecated in Java")
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        if (fullscreen) {
-            curTab()?.session?.exitFullScreen()
-            return
-        }
-        if (urlBar.hasFocus()) {
-            urlBar.clearFocus()
-            hideKeyboard()
-            return
-        }
-        val t = curTab()
-        if (t != null && t.canBack) {
-            t.session?.goBack(true)
-            return
-        }
-        if (tabs.size > 1) {
-            closeTab(current)
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        if (now - lastBack < 2000) {
-            exitApp()
-        } else {
-            lastBack = now
-            toast("Press back again to exit")
+@Composable
+fun BrowserScreen() {
+    Scaffold(
+        topBar = { if (!uiIsFullscreen) TopBar() },
+        bottomBar = { if (!uiIsFullscreen) BottomBar() }
+    ) { paddingValues ->
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            AndroidView(
+                factory = { geckoView },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
+}
 
-    @Deprecated("Deprecated in Java")
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_FILE) {
-            prompts.onFileResult(resultCode, data)
-        } else if (requestCode == REQ_XPI) {
-            val uri = data?.data
-            if (resultCode == RESULT_OK && uri != null) {
-                Thread {
-                    try {
-                        val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
-                        contentResolver.openInputStream(uri)!!.use { i ->
-                            f.outputStream().use { o -> i.copyTo(o) }
-                        }
-                        runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
-                    } catch (e: Exception) {
-                        toast("Could not read that file")
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TopBar() {
+    var textFieldValue by remember { mutableStateOf(uiUrl) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(uiUrl) { 
+        if (textFieldValue != uiUrl) textFieldValue = uiUrl 
+    }
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .statusBarsPadding(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextField(
+                value = textFieldValue,
+                onValueChange = { textFieldValue = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                placeholder = { Text("Search or enter address", fontSize = 14.sp) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = androidx.compose.ui.graphics.Color(0xFFE7E0EC),
+                    unfocusedContainerColor = androidx.compose.ui.graphics.Color(0xFFE7E0EC),
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                ),
+                shape = RoundedCornerShape(24.dp),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = ImeAction.Go,
+                    keyboardType = KeyboardType.Uri
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onGo = { 
+                        go(textFieldValue) 
+                        keyboardController?.hide()
                     }
-                }.start()
+                )
+            )
+            IconButton(onClick = { curTab()?.session?.reload(GeckoSession.LOAD_FLAGS_NONE) }) {
+                Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = androidx.compose.ui.graphics.Color(0xFF6750A4))
             }
         }
-    }
-
-    // ------------------------------------------------------------------
-    // UI
-    // ------------------------------------------------------------------
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    private fun toast(m: String) {
-        runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-    }
-
-    private fun barButton(label: String, onClick: () -> Unit): TextView {
-        val tv = TextView(this)
-        tv.text = label
-        tv.textSize = 22f
-        tv.gravity = Gravity.CENTER
-        val out = TypedValue()
-        theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, out, true)
-        tv.setBackgroundResource(out.resourceId)
-        tv.setOnClickListener { onClick() }
-        return tv
-    }
-
-    private fun buildUi() {
-        val match = ViewGroup.LayoutParams.MATCH_PARENT
-        val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
-
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-
-        // ----- top bar -----
-        val top = LinearLayout(this)
-        top.orientation = LinearLayout.HORIZONTAL
-        top.gravity = Gravity.CENTER_VERTICAL
-        top.setPadding(dp(10), dp(4), dp(4), dp(4))
-
-        urlBar = EditText(this)
-        urlBar.setSingleLine(true)
-        urlBar.hint = "Search or enter address"
-        urlBar.textSize = 15f
-        urlBar.imeOptions = EditorInfo.IME_ACTION_GO
-        urlBar.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        urlBar.setOnEditorActionListener { v, actionId, event ->
-            val enter = event != null && event.keyCode == KeyEvent.KEYCODE_ENTER &&
-                event.action == KeyEvent.ACTION_DOWN
-            if (actionId == EditorInfo.IME_ACTION_GO || enter) {
-                go(v.text.toString())
-                true
-            } else false
+        
+        if (uiIsLoading) {
+            LinearProgressIndicator(
+                progress = { uiProgress / 100f },
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = androidx.compose.ui.graphics.Color(0xFF6750A4)
+            )
         }
-        urlBar.setOnFocusChangeListener { _, has ->
-            val t = curTab()
-            if (has) {
-                urlBar.setText(t?.url ?: "")
-                urlBar.post { urlBar.selectAll() }
-            } else {
-                urlBar.setText(display(t?.url ?: ""))
-            }
+    }
+}
+
+@Composable
+fun BottomBar() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(androidx.compose.ui.graphics.Color(0xFFFFFBFE))
+            .navigationBarsPadding()
+            .height(56.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = { if (uiCanBack) curTab()?.session?.goBack(true) }) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (uiCanBack) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.Gray)
         }
-        top.addView(urlBar, LinearLayout.LayoutParams(0, wrap, 1f))
-        top.addView(barButton("↻") { curTab()?.session?.reload(GeckoSession.LOAD_FLAGS_NONE) },
-            LinearLayout.LayoutParams(dp(44), dp(44)))
-        topBar = top
-        root.addView(top, LinearLayout.LayoutParams(match, wrap))
-
-        // ----- progress -----
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
-        progress.max = 100
-        progress.visibility = View.GONE
-        root.addView(progress, LinearLayout.LayoutParams(match, dp(3)))
-
-        // ----- web view -----
-        geckoView = GeckoView(this)
-        root.addView(geckoView, LinearLayout.LayoutParams(match, 0, 1f))
-
-        // ----- bottom bar -----
-        val bottom = LinearLayout(this)
-        bottom.orientation = LinearLayout.HORIZONTAL
-        bottom.gravity = Gravity.CENTER_VERTICAL
-
-        backBtn = barButton("←") { curTab()?.session?.goBack(true) }
-        fwdBtn = barButton("→") { curTab()?.session?.goForward(true) }
-
-        tabsBtn = TextView(this)
-        tabsBtn.gravity = Gravity.CENTER
-        tabsBtn.textSize = 13f
-        tabsBtn.typeface = Typeface.DEFAULT_BOLD
-        val box = GradientDrawable()
-        box.setStroke(dp(2), Color.GRAY)
-        box.cornerRadius = dp(5).toFloat()
-        tabsBtn.background = box
-        val tabsHolder = FrameLayout(this)
-        tabsHolder.addView(tabsBtn, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
-        tabsHolder.setOnClickListener { showTabs() }
-
-        val menuBtn = barButton("⋮") { showMenu() }
-
-        for (v in listOf<View>(backBtn, fwdBtn, tabsHolder, menuBtn)) {
-            bottom.addView(v, LinearLayout.LayoutParams(0, dp(48), 1f))
+        IconButton(onClick = { if (uiCanForward) curTab()?.session?.goForward(true) }) {
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward", tint = if (uiCanForward) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.Gray)
         }
-        bottomBar = bottom
-        root.addView(bottom, LinearLayout.LayoutParams(match, wrap))
-
-        setContentView(root)
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .border(2.dp, androidx.compose.ui.graphics.Color(0xFF6750A4), RoundedCornerShape(6.dp))
+                .clickable { showTabs() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(uiTabCount.toString(), color = androidx.compose.ui.graphics.Color(0xFF6750A4), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+        IconButton(onClick = { showMenu() }) {
+            Icon(Icons.Default.MoreVert, "Menu", tint = androidx.compose.ui.graphics.Color(0xFF1C1B1F))
+        }
     }
+}
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    handleIntent(intent)
+}
 
-    private fun updateButtons() {
-        val t = curTab()
-        tabsBtn.text = tabs.size.toString()
-        backBtn.alpha = if (t?.canBack == true) 1f else 0.3f
-        fwdBtn.alpha = if (t?.canForward == true) 1f else 0.3f
+private fun handleIntent(i: Intent?) {
+    if (i?.action == Intent.ACTION_VIEW) {
+        val u = i.dataString
+        if (!u.isNullOrEmpty()) newTab(u)
     }
+}
 
-    private fun hideKeyboard() {
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(urlBar.windowToken, 0)
+override fun onStop() {
+    super.onStop()
+    if (!skipSave) saveTabs()
+}
+
+override fun onDestroy() {
+    try { geckoView.releaseSession() } catch (e: Exception) {}
+    for (t in tabs) {
+        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+        t.session = null
     }
+    super.onDestroy()
+}
 
-    private fun display(u: String): String {
-        if (u == "about:blank") return ""
-        return u.removePrefix("https://").removePrefix("http://").removeSuffix("/")
+@Deprecated("Deprecated in Java")
+@Suppress("DEPRECATION")
+override fun onBackPressed() {
+    if (fullscreen) {
+        curTab()?.session?.exitFullScreen()
+        return
     }
+    val t = curTab()
+    if (t != null && t.canBack) {
+        t.session?.goBack(true)
+        return
+    }
+    if (tabs.size > 1) {
+        closeTab(current)
+        return
+    }
+    val now = SystemClock.uptimeMillis()
+    if (now - lastBack < 2000) {
+        exitApp()
+    } else {
+        lastBack = now
+        toast("Press back again to exit")
+    }
+}
 
-    private fun setFullscreen(on: Boolean) {
-        runOnUiThread {
-            fullscreen = on
-            topBar.visibility = if (on) View.GONE else View.VISIBLE
-            bottomBar.visibility = if (on) View.GONE else View.VISIBLE
-            val c = window.insetsController
-            if (c != null) {
-                if (on) {
-                    c.hide(WindowInsets.Type.systemBars())
-                    c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                } else {
-                    c.show(WindowInsets.Type.systemBars())
+@Deprecated("Deprecated in Java")
+@Suppress("DEPRECATION")
+override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode == REQ_FILE) {
+        prompts.onFileResult(resultCode, data)
+    } else if (requestCode == REQ_XPI) {
+        val uri = data?.data
+        if (resultCode == RESULT_OK && uri != null) {
+            Thread {
+                try {
+                    val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
+                    contentResolver.openInputStream(uri)!!.use { i ->
+                        f.outputStream().use { o -> i.copyTo(o) }
+                    }
+                    runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
+                } catch (e: Exception) {
+                    toast("Could not read that file")
                 }
+            }.start()
+        }
+    }
+}
+
+private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
+
+private fun updateButtons() {
+    val t = curTab()
+    runOnUiThread {
+        uiTabCount = tabs.size
+        uiCanBack = t?.canBack == true
+        uiCanForward = t?.canForward == true
+    }
+}
+
+private fun hideKeyboard() {
+    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    imm.hideSoftInputFromWindow(geckoView.windowToken, 0)
+}
+
+private fun display(u: String): String {
+    if (u == "about:blank") return ""
+    return u.removePrefix("https://").removePrefix("http://").removeSuffix("/")
+}
+
+private fun setFullscreen(on: Boolean) {
+    runOnUiThread {
+        fullscreen = on
+        uiIsFullscreen = on
+        val c = window.insetsController
+        if (c != null) {
+            if (on) {
+                c.hide(WindowInsets.Type.systemBars())
+                c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                c.show(WindowInsets.Type.systemBars())
             }
         }
     }
+}
+private fun curTab(): Tab? = tabs.getOrNull(current)
 
-    // ------------------------------------------------------------------
-    // Tabs
-    // ------------------------------------------------------------------
+private fun toUrl(input: String): String {
+    val t = input.trim()
+    if (t.isEmpty()) return HOME
+    val lower = t.lowercase()
+    if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
+        lower.startsWith("file:") || lower.startsWith("moz-extension:")
+    ) return t
+    if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
+    if (!t.contains(' ') && t.contains('.')) return "https://$t"
+    return store.searchUrl() + Uri.encode(t)
+}
 
-    private fun curTab(): Tab? = tabs.getOrNull(current)
-
-    private fun toUrl(input: String): String {
-        val t = input.trim()
-        if (t.isEmpty()) return HOME
-        val lower = t.lowercase()
-        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
-            lower.startsWith("file:") || lower.startsWith("moz-extension:")
-        ) return t
-        if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
-        if (!t.contains(' ') && t.contains('.')) return "https://$t"
-        return store.searchUrl() + Uri.encode(t)
+private fun go(text: String) {
+    val url = toUrl(text)
+    val t = curTab()
+    if (t == null) newTab(url) else {
+        t.url = url
+        t.session?.loadUri(url)
     }
+    hideKeyboard()
+    geckoView.requestFocus()
+}
 
-    private fun go(text: String) {
-        val url = toUrl(text)
-        val t = curTab()
-        if (t == null) {
-            newTab(url)
-        } else {
-            t.url = url
-            t.session?.loadUri(url)
-        }
-        urlBar.clearFocus()
-        hideKeyboard()
-        geckoView.requestFocus()
+private fun newTab(url: String, select: Boolean = true): Tab {
+    val t = Tab(url)
+    tabs.add(t)
+    if (select) selectTab(tabs.size - 1) else updateButtons()
+    return t
+}
+
+private fun ensureSession(t: Tab): GeckoSession {
+    t.session?.let { return it }
+    val s = GeckoSession()
+    val d = TabDelegates(t)
+    s.contentDelegate = d
+    s.progressDelegate = d
+    s.navigationDelegate = d
+    s.promptDelegate = prompts
+    s.open(rt)
+    t.session = s
+    if (t.url.isNotEmpty()) s.loadUri(t.url)
+    return s
+}
+
+private fun selectTab(i: Int) {
+    if (i !in tabs.indices) return
+    tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
+    current = i
+    val t = tabs[i]
+    val s = ensureSession(t)
+    geckoView.releaseSession()
+    geckoView.setSession(s)
+    s.setActive(true)
+    runOnUiThread { uiUrl = display(t.url) }
+    uiProgress = 0
+    uiIsLoading = false
+    updateButtons()
+}
+
+private fun closeTab(i: Int) {
+    if (i !in tabs.indices) return
+    val t = tabs[i]
+    val wasCurrent = (i == current)
+    if (wasCurrent) geckoView.releaseSession()
+    t.session?.let { if (it.isOpen) it.close() }
+    t.session = null
+    tabs.removeAt(i)
+    if (tabs.isEmpty()) {
+        current = -1
+        newTab(HOME)
+        return
     }
-
-    private fun newTab(url: String, select: Boolean = true): Tab {
-        val t = Tab(url)
-        tabs.add(t)
-        if (select) selectTab(tabs.size - 1) else updateButtons()
-        return t
-    }
-
-    private fun ensureSession(t: Tab): GeckoSession {
-        t.session?.let { return it }
-        val s = GeckoSession()
-        val d = TabDelegates(t)
-        s.contentDelegate = d
-        s.progressDelegate = d
-        s.navigationDelegate = d
-        s.promptDelegate = prompts
-        s.open(rt)
-        t.session = s
-        if (t.url.isNotEmpty()) s.loadUri(t.url)
-        return s
-    }
-
-    private fun selectTab(i: Int) {
-        if (i !in tabs.indices) return
-        tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
-        current = i
-        val t = tabs[i]
-        val s = ensureSession(t)
-        geckoView.releaseSession()
-        geckoView.setSession(s)
-        s.setActive(true)
-        urlBar.clearFocus()
-        urlBar.setText(display(t.url))
-        progress.visibility = View.GONE
+    if (wasCurrent) {
+        current = -1
+        selectTab(minOf(i, tabs.size - 1))
+    } else {
+        if (i < current) current--
         updateButtons()
     }
+}
 
-    private fun closeTab(i: Int) {
-        if (i !in tabs.indices) return
-        val t = tabs[i]
-        val wasCurrent = (i == current)
-        if (wasCurrent) geckoView.releaseSession()
+private fun closeAllTabs() {
+    geckoView.releaseSession()
+    for (t in tabs) {
         t.session?.let { if (it.isOpen) it.close() }
         t.session = null
-        tabs.removeAt(i)
-        if (tabs.isEmpty()) {
-            current = -1
-            newTab(HOME)
-            return
-        }
-        if (wasCurrent) {
-            current = -1
-            selectTab(minOf(i, tabs.size - 1))
-        } else {
-            if (i < current) current--
-            updateButtons()
-        }
     }
+    tabs.clear()
+    current = -1
+}
 
-    private fun closeAllTabs() {
-        geckoView.releaseSession()
-        for (t in tabs) {
-            t.session?.let { if (it.isOpen) it.close() }
-            t.session = null
-        }
-        tabs.clear()
-        current = -1
+private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
+
+private fun restoreTabs() {
+    val (saved, cur) = store.loadTabs()
+    if (saved.isEmpty()) {
+        newTab(HOME)
+        return
     }
+    for ((u, t) in saved) tabs.add(Tab(u, t))
+    selectTab(cur.coerceIn(0, tabs.size - 1))
+}
 
-    private fun saveTabs() {
-        store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
+private fun recover(t: Tab) {
+    runOnUiThread {
+        val wasCurrent = tabs.indexOf(t) == current
+        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+        t.session = null
+        if (wasCurrent) selectTab(current)
     }
+}
 
-    private fun restoreTabs() {
-        val (saved, cur) = store.loadTabs()
-        if (saved.isEmpty()) {
-            newTab(HOME)
-            return
-        }
-        for ((u, t) in saved) tabs.add(Tab(u, t))
-        selectTab(cur.coerceIn(0, tabs.size - 1))
-    }
+inner class TabDelegates(private val tab: Tab) :
+    GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
 
-    private fun recover(t: Tab) {
+    private fun isCurrent() = curTab() === tab
+
+    override fun onTitleChange(session: GeckoSession, title: String?) { tab.title = title ?: "" }
+    override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
+    override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
+    override fun onCrash(session: GeckoSession) { recover(tab) }
+    override fun onKill(session: GeckoSession) { recover(tab) }
+    
+    override fun onCloseRequest(session: GeckoSession) {
         runOnUiThread {
-            val wasCurrent = tabs.indexOf(t) == current
-            try {
-                t.session?.let { if (it.isOpen) it.close() }
-            } catch (e: Exception) {
-            }
-            t.session = null
-            if (wasCurrent) selectTab(current)
+            val i = tabs.indexOf(tab)
+            if (i >= 0) closeTab(i)
         }
     }
 
-    inner class TabDelegates(private val tab: Tab) :
-        GeckoSession.ContentDelegate,
-        GeckoSession.ProgressDelegate,
-        GeckoSession.NavigationDelegate {
-
-        private fun isCurrent() = curTab() === tab
-
-        // ----- content -----
-        override fun onTitleChange(session: GeckoSession, title: String?) {
-            tab.title = title ?: ""
+    override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
+        val link = element.linkUri
+        val img = element.srcUri
+        val names = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        if (link != null) {
+            names.add("Open link in new tab")
+            acts.add { newTab(link) }
+            names.add("Copy link")
+            acts.add { copyText(link) }
         }
-
-        override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
-            setFullscreen(fullScreen)
+        if (img != null) {
+            names.add("Open image/media in new tab")
+            acts.add { newTab(img) }
         }
-
-        override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-            handleDownload(response)
+        if (names.isEmpty()) return
+        runOnUiThread {
+            AlertDialog.Builder(this@MainActivity).setItems(names.toTypedArray()) { _, i -> acts[i]() }.show()
         }
+    }
 
-        override fun onCloseRequest(session: GeckoSession) {
-            runOnUiThread {
-                val i = tabs.indexOf(tab)
-                if (i >= 0) closeTab(i)
+    override fun onPageStart(session: GeckoSession, url: String) {
+        if (isCurrent()) runOnUiThread { uiProgress = 5; uiIsLoading = true }
+    }
+
+    override fun onProgressChange(session: GeckoSession, p: Int) {
+        if (isCurrent()) runOnUiThread { uiProgress = p; uiIsLoading = p in 1..99 }
+    }
+
+    override fun onPageStop(session: GeckoSession, success: Boolean) {
+        if (isCurrent()) runOnUiThread { uiIsLoading = false }
+        if (success && tab.url.startsWith("http")) {
+            store.addVisit(tab.url, tab.title)
+            injectPlayerSkin(session)
+        }
+    }
+
+    override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+        tab.url = url ?: ""
+        if (isCurrent()) runOnUiThread { uiUrl = display(tab.url) }
+    }
+
+    override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
+        tab.canBack = canGoBack
+        if (isCurrent()) runOnUiThread { uiCanBack = canGoBack }
+    }
+
+    override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
+        tab.canForward = canGoForward
+        if (isCurrent()) runOnUiThread { uiCanForward = canGoForward }
+    }
+
+    override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+        val u = request.uri
+        
+        if (u.startsWith("gbrowser-dl://")) {
+            val videoUrl = Uri.decode(u.removePrefix("gbrowser-dl://"))
+            if (videoUrl.startsWith("blob:")) {
+                toast("Cannot download live/DRM streams directly.")
+            } else {
+                try {
+                    val name = URLUtil.guessFileName(videoUrl, null, "video/mp4")
+                    val req = DownloadManager.Request(Uri.parse(videoUrl))
+                    req.setTitle(name)
+                    req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                    (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+                    toast("Downloading video...")
+                } catch (e: Exception) {
+                    toast("Failed to start download.")
+                }
             }
-        }
-
-        override fun onCrash(session: GeckoSession) {
-            recover(tab)
-        }
-
-        override fun onKill(session: GeckoSession) {
-            recover(tab)
-        }
-
-        override fun onContextMenu(
-            session: GeckoSession,
-            screenX: Int,
-            screenY: Int,
-            element: GeckoSession.ContentDelegate.ContextElement
-        ) {
-            val link = element.linkUri
-            val img = element.srcUri
-            val names = ArrayList<String>()
-            val acts = ArrayList<() -> Unit>()
-            if (link != null) {
-                names.add("Open link in new tab")
-                acts.add { newTab(link) }
-                names.add("Copy link")
-                acts.add { copyText(link) }
-            }
-            if (img != null) {
-                names.add("Open image/media in new tab")
-                acts.add { newTab(img) }
-            }
-            if (names.isEmpty()) return
-            runOnUiThread {
-                AlertDialog.Builder(this@MainActivity)
-                    .setItems(names.toTypedArray()) { _, i -> acts[i]() }
-                    .show()
-            }
-        }
-
-        // ----- progress -----
-        override fun onPageStart(session: GeckoSession, url: String) {
-            if (isCurrent()) {
-                progress.progress = 5
-                progress.visibility = View.VISIBLE
-            }
-        }
-
-        override fun onProgressChange(session: GeckoSession, p: Int) {
-            if (isCurrent()) {
-                progress.progress = p
-                progress.visibility = if (p in 1..99) View.VISIBLE else View.GONE
-            }
-        }
-
-        override fun onPageStop(session: GeckoSession, success: Boolean) {
-            if (isCurrent()) progress.visibility = View.GONE
-            if (success && tab.url.startsWith("http")) store.addVisit(tab.url, tab.title)
-        }
-
-        // ----- navigation -----
-        override fun onLocationChange(
-            session: GeckoSession,
-            url: String?,
-            perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
-            hasUserGesture: Boolean
-        ) {
-            tab.url = url ?: ""
-            if (isCurrent() && !urlBar.hasFocus()) urlBar.setText(display(tab.url))
-        }
-
-        override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
-            tab.canBack = canGoBack
-            if (isCurrent()) updateButtons()
-        }
-
-        override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
-            tab.canForward = canGoForward
-            if (isCurrent()) updateButtons()
-        }
-
-        override fun onLoadRequest(
-            session: GeckoSession,
-            request: GeckoSession.NavigationDelegate.LoadRequest
-        ): GeckoResult<AllowOrDeny>? {
-            val u = request.uri
-            val scheme = u.substringBefore(':', "").lowercase()
-            if (scheme.isEmpty() || scheme in okSchemes) return null
-            openExternal(u)
             return GeckoResult.fromValue(AllowOrDeny.DENY)
         }
 
-        override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-            runOnUiThread { newTab(uri) }
-            return null
-        }
+        val scheme = u.substringBefore(':', "").lowercase()
+        if (scheme.isEmpty() || scheme in okSchemes) return null
+        openExternal(u)
+        return GeckoResult.fromValue(AllowOrDeny.DENY)
+    }
+
+    override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+        runOnUiThread { newTab(uri) }
+        return null
+    }
+    }
+        private fun injectPlayerSkin(session: GeckoSession) {
+        val js = """
+            (function() {
+                if (window.__gbSkinInstalled) return;
+                window.__gbSkinInstalled = true;
+                function attach(video) {
+                    if (video.__gbSkin) return;
+                    video.__gbSkin = true;
+                    video.controls = false;
+                    let wrap = video.parentElement;
+                    if (!wrap.classList.contains("__gbWrap")) {
+                        let newWrap = document.createElement("div");
+                        newWrap.className = "__gbWrap";
+                        newWrap.style.cssText = "position:relative!important;display:inline-block;width:100%;height:100%;";
+                        video.parentNode.insertBefore(newWrap, video);
+                        newWrap.appendChild(video);
+                        wrap = newWrap;
+                    }
+                    let bar = document.createElement("div");
+                    bar.style.cssText = "position:absolute;bottom:12px;left:12px;right:12px;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:28px;background:rgba(28,27,31,0.85);backdrop-filter:blur(12px);color:#fff;font-family:sans-serif;z-index:2147483647;opacity:0;transition:opacity 0.2s;pointer-events:none;";
+                    bar.innerHTML = `
+                        <button id="__gbPlay" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">▶</button>
+                        <input type="range" id="__gbSeek" style="flex:1;accent-color:#D0BCFF;" min="0" max="1000" value="0"/>
+                        <span id="__gbTime" style="font-size:14px;opacity:0.85;white-space:nowrap;">0:00</span>
+                        <button id="__gbDl" style="background:#D0BCFF;color:#381E72;border:none;border-radius:16px;padding:6px 12px;font-weight:bold;cursor:pointer;font-size:12px;">⬇ Download</button>
+                    `;
+                    wrap.addEventListener("mouseenter", () => { bar.style.opacity = "1"; bar.style.pointerEvents = "auto"; });
+                    wrap.addEventListener("mouseleave", () => { bar.style.opacity = "0"; bar.style.pointerEvents = "none"; });
+                    bar.addEventListener("mouseenter", () => { bar.style.opacity = "1"; bar.style.pointerEvents = "auto"; });
+                    bar.addEventListener("mouseleave", () => { bar.style.opacity = "0"; bar.style.pointerEvents = "none"; });
+                    wrap.appendChild(bar);
+                    let playBtn = bar.querySelector("#__gbPlay");
+                    let seek = bar.querySelector("#__gbSeek");
+                    let time = bar.querySelector("#__gbTime");
+                    let dlBtn = bar.querySelector("#__gbDl");
+                    playBtn.onclick = () => video.paused ? video.play() : video.pause();
+                    seek.oninput = () => { if(video.duration) video.currentTime = (seek.value / 1000) * video.duration; };
+                    dlBtn.onclick = () => { window.location.href = "gbrowser-dl://" + encodeURIComponent(video.src); };
+                    video.addEventListener("timeupdate", () => {
+                        if(video.duration) {
+                            seek.value = Math.round((video.currentTime / video.duration) * 1000);
+                            let m = Math.floor(video.currentTime / 60);
+                            let s = Math.floor(video.currentTime % 60).toString().padStart(2, '0');
+                            time.innerText = m + ":" + s;
+                        }
+                        playBtn.innerText = video.paused ? "▶" : "⏸";
+                    });
+                    video.addEventListener("play", () => playBtn.innerText = "⏸");
+                    video.addEventListener("pause", () => playBtn.innerText = "▶");
+                }
+                document.querySelectorAll("video").forEach(attach);
+                new MutationObserver(() => document.querySelectorAll("video").forEach(attach))
+                    .observe(document.body, {childList: true, subtree: true});
+            })();
+        """.trimIndent()
+        session.runtime.evaluateJS(js)
     }
 
     private fun openExternal(u: String) {
         try {
-            val i = if (u.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME)
-            else Intent(Intent.ACTION_VIEW, Uri.parse(u))
+            val i = if (u.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(u))
             i.addCategory(Intent.CATEGORY_BROWSABLE)
             i.component = null
             i.selector = null
@@ -648,10 +700,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Dialogs: tabs, history, menu
-    // ------------------------------------------------------------------
-
     private fun twoLineRow(title: String, sub: String, bold: Boolean): LinearLayout {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
@@ -675,7 +723,7 @@ class MainActivity : Activity() {
     private fun showTabs() {
         val lv = ListView(this)
         var dlg: AlertDialog? = null
-        val adapter = object : BaseAdapter() {
+        lv.adapter = object : BaseAdapter() {
             override fun getCount() = tabs.size
             override fun getItem(position: Int): Any = tabs[position]
             override fun getItemId(position: Int) = position.toLong()
@@ -685,45 +733,29 @@ class MainActivity : Activity() {
                 row.orientation = LinearLayout.HORIZONTAL
                 row.gravity = Gravity.CENTER_VERTICAL
                 row.setPadding(dp(16), dp(8), dp(4), dp(8))
-                row.addView(
-                    twoLineRow(t.title, t.url, position == current),
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                )
+                row.addView(twoLineRow(t.title, t.url, position == current), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 val x = TextView(this@MainActivity)
                 x.text = "✕"
                 x.textSize = 18f
                 x.gravity = Gravity.CENTER
-                x.setOnClickListener {
-                    closeTab(position)
-                    notifyDataSetChanged()
-                }
+                x.setOnClickListener { closeTab(position); notifyDataSetChanged() }
                 row.addView(x, LinearLayout.LayoutParams(dp(48), dp(48)))
                 return row
             }
         }
-        lv.adapter = adapter
-        lv.setOnItemClickListener { _, _, p, _ ->
-            selectTab(p)
-            dlg?.dismiss()
-        }
+        lv.setOnItemClickListener { _, _, p, _ -> selectTab(p); dlg?.dismiss() }
         dlg = AlertDialog.Builder(this)
             .setTitle("Tabs")
             .setView(lv)
             .setPositiveButton("New tab") { _, _ -> newTab(HOME) }
-            .setNegativeButton("Close all") { _, _ ->
-                closeAllTabs()
-                newTab(HOME)
-            }
+            .setNegativeButton("Close all") { _, _ -> closeAllTabs(); newTab(HOME) }
             .setNeutralButton("Done", null)
             .show()
     }
 
     private fun showHistory() {
         val list = store.history().take(300)
-        if (list.isEmpty()) {
-            toast("No history yet")
-            return
-        }
+        if (list.isEmpty()) { toast("No history yet"); return }
         val lv = ListView(this)
         var dlg: AlertDialog? = null
         lv.adapter = object : BaseAdapter() {
@@ -737,104 +769,48 @@ class MainActivity : Activity() {
                 return row
             }
         }
-        lv.setOnItemClickListener { _, _, p, _ ->
-            go(list[p].url)
-            dlg?.dismiss()
-        }
+        lv.setOnItemClickListener { _, _, p, _ -> go(list[p].url); dlg?.dismiss() }
         dlg = AlertDialog.Builder(this)
             .setTitle("History")
             .setView(lv)
-            .setPositiveButton("Clear all") { _, _ ->
-                store.clearHistory()
-                toast("History cleared")
-            }
+            .setPositiveButton("Clear all") { _, _ -> store.clearHistory(); toast("History cleared") }
             .setNegativeButton("Close", null)
             .show()
     }
 
     private fun showMenu() {
-        val items = arrayOf(
-            "New tab",
-            "History",
-            "Add-ons",
-            "Clear data now…",
-            "Auto-clear on exit…",
-            "Search engine: " + store.engineNames[store.engineIndex()],
-            "Downloads",
-            "Exit"
-        )
+        val items = arrayOf("New tab", "History", "Add-ons", "Clear data now…", "Auto-clear on exit…", "Search engine: " + store.engineNames[store.engineIndex()], "Downloads", "Exit")
         AlertDialog.Builder(this).setItems(items) { _, i ->
             when (i) {
                 0 -> newTab(HOME)
                 1 -> showHistory()
                 2 -> showAddons()
-                3 -> chooseTypes(
-                    "Clear data now",
-                    booleanArrayOf(true, true, false, true), "Clear"
-                ) { st -> clearNow(st, false) { toast("Cleared") } }
-                4 -> chooseTypes(
-                    "Auto-clear on exit",
-                    BooleanArray(4) { store.flag(autoKeys[it]) }, "Save"
-                ) { st ->
-                    for (k in 0 until 4) store.setFlag(autoKeys[k], st[k])
-                    toast("Saved")
-                }
-                5 -> AlertDialog.Builder(this)
-                    .setTitle("Search engine")
-                    .setItems(store.engineNames) { _, k -> store.setEngine(k) }
-                    .show()
-                6 -> try {
-                    startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
-                } catch (e: Exception) {
-                    toast("Open your Files app → Downloads")
-                }
+                3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
+                4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
+                5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
+                6 -> try { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) } catch (e: Exception) { toast("Open your Files app → Downloads") }
                 7 -> exitApp()
                 else -> {}
             }
         }.show()
     }
 
-    // ------------------------------------------------------------------
-    // Clearing data / exit
-    // ------------------------------------------------------------------
-
-    private fun chooseTypes(
-        title: String,
-        initial: BooleanArray,
-        okLabel: String,
-        onOk: (BooleanArray) -> Unit
-    ) {
+    private fun chooseTypes(title: String, initial: BooleanArray, okLabel: String, onOk: (BooleanArray) -> Unit) {
         val state = initial.copyOf()
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMultiChoiceItems(dataLabels, state) { _, i, on -> state[i] = on }
-            .setPositiveButton(okLabel) { _, _ -> onOk(state) }
-            .setNegativeButton("Cancel", null)
-            .show()
+        AlertDialog.Builder(this).setTitle(title).setMultiChoiceItems(dataLabels, state) { _, i, on -> state[i] = on }
+            .setPositiveButton(okLabel) { _, _ -> onOk(state) }.setNegativeButton("Cancel", null).show()
     }
 
-    /** st = [history, cookies, tabs, cache] */
     private fun clearNow(st: BooleanArray, forExit: Boolean, done: () -> Unit) {
         if (st[0]) store.clearHistory()
         if (st[2]) {
             store.clearTabs()
-            if (forExit) {
-                skipSave = true
-            } else {
-                closeAllTabs()
-                newTab(HOME)
-            }
+            if (forExit) skipSave = true else { closeAllTabs(); newTab(HOME) }
         }
         var flags = 0L
-        if (st[1]) flags = flags or StorageController.ClearFlags.COOKIES or
-            StorageController.ClearFlags.DOM_STORAGES
-        if (st[3]) flags = flags or StorageController.ClearFlags.NETWORK_CACHE or
-            StorageController.ClearFlags.IMAGE_CACHE
-        if (flags != 0L) {
-            rt.storageController.clearData(flags).accept({ done() }, { done() })
-        } else {
-            done()
-        }
+        if (st[1]) flags = flags or StorageController.ClearFlags.COOKIES or StorageController.ClearFlags.DOM_STORAGES
+        if (st[3]) flags = flags or StorageController.ClearFlags.NETWORK_CACHE or StorageController.ClearFlags.IMAGE_CACHE
+        if (flags != 0L) rt.storageController.clearData(flags).accept({ done() }, { done() }) else done()
     }
 
     private fun exitApp() {
@@ -858,42 +834,22 @@ class MainActivity : Activity() {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Add-ons
-    // ------------------------------------------------------------------
-
     private val addonPrompt = object : WebExtensionController.PromptDelegate {
-        override fun onInstallPromptRequest(
-            extension: WebExtension,
-            permissions: Array<String>,
-            origins: Array<String>,
-            dataCollectionPermissions: Array<String>
-        ): GeckoResult<WebExtension.PermissionPromptResponse>? {
+        override fun onInstallPromptRequest(extension: WebExtension, permissions: Array<String>, origins: Array<String>, dataCollectionPermissions: Array<String>): GeckoResult<WebExtension.PermissionPromptResponse>? {
             val res = GeckoResult<WebExtension.PermissionPromptResponse>()
             runOnUiThread {
                 val name = extension.metaData?.name ?: "this add-on"
                 val msg = StringBuilder()
-                if (permissions.isNotEmpty()) {
-                    msg.append("It can:\n• ").append(permissions.joinToString("\n• "))
-                }
+                if (permissions.isNotEmpty()) msg.append("It can:\n• ").append(permissions.joinToString("\n• "))
                 if (origins.isNotEmpty()) {
                     if (msg.isNotEmpty()) msg.append("\n\n")
                     msg.append("On these sites:\n• ").append(origins.joinToString("\n• "))
                 }
                 if (msg.isEmpty()) msg.append("It needs no special permissions.")
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Add $name?")
-                    .setMessage(msg.toString())
-                    .setPositiveButton("Add") { _, _ ->
-                        res.complete(WebExtension.PermissionPromptResponse(true, false, false))
-                    }
-                    .setNegativeButton("Cancel") { _, _ ->
-                        res.complete(WebExtension.PermissionPromptResponse(false, false, false))
-                    }
-                    .setOnCancelListener {
-                        res.complete(WebExtension.PermissionPromptResponse(false, false, false))
-                    }
-                    .show()
+                AlertDialog.Builder(this@MainActivity).setTitle("Add $name?").setMessage(msg.toString())
+                    .setPositiveButton("Add") { _, _ -> res.complete(WebExtension.PermissionPromptResponse(true, false, false)) }
+                    .setNegativeButton("Cancel") { _, _ -> res.complete(WebExtension.PermissionPromptResponse(false, false, false)) }
+                    .setOnCancelListener { res.complete(WebExtension.PermissionPromptResponse(false, false, false)) }.show()
             }
             return res
         }
@@ -916,15 +872,9 @@ class MainActivity : Activity() {
                 labels.add("＋ Install from link or name")
                 labels.add("＋ Install from .xpi file")
                 AlertDialog.Builder(this).setTitle("Add-ons").setItems(labels.toTypedArray()) { _, i ->
-                    if (i < exts.size) {
-                        manageAddon(exts[i])
-                    } else {
+                    if (i < exts.size) manageAddon(exts[i]) else {
                         when (i - exts.size) {
-                            0 -> AlertDialog.Builder(this)
-                                .setTitle("Recommended")
-                                .setItems(recommended.map { it.first }.toTypedArray()) { _, k ->
-                                    installFromInput(recommended[k].second)
-                                }.show()
+                            0 -> AlertDialog.Builder(this).setTitle("Recommended").setItems(recommended.map { it.first }.toTypedArray()) { _, k -> installFromInput(recommended[k].second) }.show()
                             1 -> askLink()
                             2 -> pickXpi()
                             else -> {}
@@ -939,12 +889,9 @@ class MainActivity : Activity() {
         val input = EditText(this)
         input.setSingleLine(true)
         input.hint = "addons.mozilla.org link, add-on name, or .xpi link"
-        AlertDialog.Builder(this)
-            .setTitle("Install add-on")
-            .setView(input)
+        AlertDialog.Builder(this).setTitle("Install add-on").setView(input)
             .setPositiveButton("Install") { _, _ -> installFromInput(input.text.toString()) }
-            .setNegativeButton("Cancel", null)
-            .show()
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun pickXpi() {
@@ -963,8 +910,7 @@ class MainActivity : Activity() {
         val acts = ArrayList<() -> Unit>()
         names.add(if (enabled) "Turn off" else "Turn on")
         acts.add {
-            val r = if (enabled) ctl.disable(e, WebExtensionController.EnableSource.USER)
-            else ctl.enable(e, WebExtensionController.EnableSource.USER)
+            val r = if (enabled) ctl.disable(e, WebExtensionController.EnableSource.USER) else ctl.enable(e, WebExtensionController.EnableSource.USER)
             r.accept({ toast("Done") }, { toast("Could not change the add-on") })
         }
         val opts = m?.optionsPageUrl
@@ -974,31 +920,18 @@ class MainActivity : Activity() {
         }
         names.add("Remove")
         acts.add {
-            AlertDialog.Builder(this)
-                .setTitle("Remove ${m?.name ?: "add-on"}?")
-                .setPositiveButton("Remove") { _, _ ->
-                    ctl.uninstall(e).accept({ toast("Removed") }, { toast("Could not remove it") })
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            AlertDialog.Builder(this).setTitle("Remove ${m?.name ?: "add-on"}?")
+                .setPositiveButton("Remove") { _, _ -> ctl.uninstall(e).accept({ toast("Removed") }, { toast("Could not remove it") }) }
+                .setNegativeButton("Cancel", null).show()
         }
-        AlertDialog.Builder(this)
-            .setTitle(m?.name ?: e.id)
-            .setItems(names.toTypedArray()) { _, i -> acts[i]() }
-            .show()
+        AlertDialog.Builder(this).setTitle(m?.name ?: e.id).setItems(names.toTypedArray()) { _, i -> acts[i]() }.show()
     }
 
-    /** Accepts: a .xpi link, an addons.mozilla.org page link, or just the add-on's short name. */
     private fun installFromInput(raw: String) {
         val t = raw.trim()
         if (t.isEmpty()) return
-        if (t.contains(".xpi")) {
-            installAddon(t)
-            return
-        }
-        val slug = if (t.contains("/addon/"))
-            t.substringAfter("/addon/").substringBefore('/').substringBefore('?')
-        else t
+        if (t.contains(".xpi")) { installAddon(t); return }
+        val slug = if (t.contains("/addon/")) t.substringAfter("/addon/").substringBefore('/').substringBefore('?') else t
         toast("Looking up add-on…")
         Thread {
             try {
