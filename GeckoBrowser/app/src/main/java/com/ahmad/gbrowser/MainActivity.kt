@@ -652,7 +652,7 @@ inner class TabDelegates(private val tab: Tab) :
                     .observe(document.body, {childList: true, subtree: true});
             })();
         """.trimIndent()
-        session.runtime.evaluateJS(js)
+        session.evaluateJS(js)
     }
 
     private fun openExternal(u: String) {
