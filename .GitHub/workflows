@@ -21,3 +21,4 @@ jobs:
           git add .
           git commit -m "Auto-unzipped project structure"
           git push
+
