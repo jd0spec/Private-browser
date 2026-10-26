@@ -1,5 +1,11 @@
 name: Unzip Project
-on: workflow_dispatch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/Unzip.yml'
+  workflow_dispatch:
+
 permissions:
   contents: write
 
