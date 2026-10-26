@@ -544,7 +544,7 @@ inner class TabDelegates(private val tab: Tab) :
         if (isCurrent()) runOnUiThread { uiIsLoading = false }
         if (success && tab.url.startsWith("http")) {
             store.addVisit(tab.url, tab.title)
-            injectPlayerSkin(session)
+           // injectPlayerSkin(session)
         }
     }
 
@@ -597,63 +597,8 @@ inner class TabDelegates(private val tab: Tab) :
         return null
     }
     }
-        private fun injectPlayerSkin(session: GeckoSession) {
-        val js = """
-            (function() {
-                if (window.__gbSkinInstalled) return;
-                window.__gbSkinInstalled = true;
-                function attach(video) {
-                    if (video.__gbSkin) return;
-                    video.__gbSkin = true;
-                    video.controls = false;
-                    let wrap = video.parentElement;
-                    if (!wrap.classList.contains("__gbWrap")) {
-                        let newWrap = document.createElement("div");
-                        newWrap.className = "__gbWrap";
-                        newWrap.style.cssText = "position:relative!important;display:inline-block;width:100%;height:100%;";
-                        video.parentNode.insertBefore(newWrap, video);
-                        newWrap.appendChild(video);
-                        wrap = newWrap;
-                    }
-                    let bar = document.createElement("div");
-                    bar.style.cssText = "position:absolute;bottom:12px;left:12px;right:12px;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:28px;background:rgba(28,27,31,0.85);backdrop-filter:blur(12px);color:#fff;font-family:sans-serif;z-index:2147483647;opacity:0;transition:opacity 0.2s;pointer-events:none;";
-                    bar.innerHTML = `
-                        <button id="__gbPlay" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">▶</button>
-                        <input type="range" id="__gbSeek" style="flex:1;accent-color:#D0BCFF;" min="0" max="1000" value="0"/>
-                        <span id="__gbTime" style="font-size:14px;opacity:0.85;white-space:nowrap;">0:00</span>
-                        <button id="__gbDl" style="background:#D0BCFF;color:#381E72;border:none;border-radius:16px;padding:6px 12px;font-weight:bold;cursor:pointer;font-size:12px;">⬇ Download</button>
-                    `;
-                    wrap.addEventListener("mouseenter", () => { bar.style.opacity = "1"; bar.style.pointerEvents = "auto"; });
-                    wrap.addEventListener("mouseleave", () => { bar.style.opacity = "0"; bar.style.pointerEvents = "none"; });
-                    bar.addEventListener("mouseenter", () => { bar.style.opacity = "1"; bar.style.pointerEvents = "auto"; });
-                    bar.addEventListener("mouseleave", () => { bar.style.opacity = "0"; bar.style.pointerEvents = "none"; });
-                    wrap.appendChild(bar);
-                    let playBtn = bar.querySelector("#__gbPlay");
-                    let seek = bar.querySelector("#__gbSeek");
-                    let time = bar.querySelector("#__gbTime");
-                    let dlBtn = bar.querySelector("#__gbDl");
-                    playBtn.onclick = () => video.paused ? video.play() : video.pause();
-                    seek.oninput = () => { if(video.duration) video.currentTime = (seek.value / 1000) * video.duration; };
-                    dlBtn.onclick = () => { window.location.href = "gbrowser-dl://" + encodeURIComponent(video.src); };
-                    video.addEventListener("timeupdate", () => {
-                        if(video.duration) {
-                            seek.value = Math.round((video.currentTime / video.duration) * 1000);
-                            let m = Math.floor(video.currentTime / 60);
-                            let s = Math.floor(video.currentTime % 60).toString().padStart(2, '0');
-                            time.innerText = m + ":" + s;
-                        }
-                        playBtn.innerText = video.paused ? "▶" : "⏸";
-                    });
-                    video.addEventListener("play", () => playBtn.innerText = "⏸");
-                    video.addEventListener("pause", () => playBtn.innerText = "▶");
-                }
-                document.querySelectorAll("video").forEach(attach);
-                new MutationObserver(() => document.querySelectorAll("video").forEach(attach))
-                    .observe(document.body, {childList: true, subtree: true});
-            })();
-        """.trimIndent()
-        session.evaluateJS(js)
-    }
+        
+    
 
     private fun openExternal(u: String) {
         try {
