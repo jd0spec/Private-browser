@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose' // <--- THIS IS THE NEW PLUGIN
 }
 
 android {
@@ -43,14 +44,10 @@ android {
         jniLibs { useLegacyPackaging = true }
     }
 
-    // --- THIS IS NEW: TELLS ANDROID TO USE COMPOSE ---
     buildFeatures {
         compose true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion '1.5.11'
-    }
-    // -------------------------------------------------
+    // The old composeOptions block is removed!
 }
 
 kotlin {
@@ -64,7 +61,7 @@ dependencies {
     // Your original GeckoView 150.0
     implementation "org.mozilla.geckoview:geckoview:150.0.20260511200624"
     
-    // --- THIS IS NEW: THE COMPOSE LIBRARIES ---
+    // The Compose libraries
     implementation platform('androidx.compose:compose-bom:2024.02.00')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-graphics'
