@@ -3,8 +3,8 @@ package com.ahmad.gbrowser.downloads
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.preference.PreferenceManager
-import com.jhaiian.clint.settings.downloads.DownloadSettingsKeys
-import com.jhaiian.clint.util.formatFileSize
+import com.ahmad.gbrowser.settings.downloads.DownloadSettingsKeys
+import com.ahmad.gbrowser.util.formatFileSize
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
