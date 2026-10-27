@@ -33,15 +33,11 @@
             </intent-filter>
         </activity>
         
-        <!-- THIS IS NEW: Register the ADM Download UI -->
+        <!-- ONLY ONE DownloadsActivity is needed here -->
         <activity
             android:name=".downloads.DownloadsActivity"
             android:exported="false"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
-        <activity
-    android:name=".downloads.DownloadsActivity"
-    android:exported="false"
-    android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
             
     </application>
 </manifest>
