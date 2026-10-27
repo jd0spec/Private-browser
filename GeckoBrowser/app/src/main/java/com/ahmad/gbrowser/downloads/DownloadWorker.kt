@@ -8,9 +8,9 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import androidx.preference.PreferenceManager
-import com.jhaiian.clint.R
-import com.jhaiian.clint.util.formatFileSize
-import com.jhaiian.clint.settings.downloads.DownloadSettingsKeys
+import com.ahmad.gbrowser.R
+import com.ahmad.gbrowser.util.formatFileSize
+import com.ahmad.gbrowser.settings.downloads.DownloadSettingsKeys
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
