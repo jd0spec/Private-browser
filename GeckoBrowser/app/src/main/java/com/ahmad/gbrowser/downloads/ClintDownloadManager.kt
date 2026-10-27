@@ -5,8 +5,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import androidx.preference.PreferenceManager
-import com.jhaiian.clint.R
-import com.jhaiian.clint.settings.downloads.DownloadSettingsKeys
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
