@@ -721,25 +721,22 @@ inner class TabDelegates(private val tab: Tab) :
     }
 
     private fun showMenu() {
-        val items = arrayOf("New tab", "History", "Add-ons", "Clear data now…", "Auto-clear on exit…", "Search engine: " + store.engineNames[store.engineIndex()], "Downloads", "Exit")
-        AlertDialog.Builder(this).setItems(items) { _, i ->
-            when (i) {
-                0 -> newTab(HOME)
-                1 -> showHistory()
-                2 -> showAddons()
-                3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
-                4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
-                5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
-                6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
-    startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
-} catch (e: Exception) {
-    toast("Downloads are saving in the background!")
-                }
-                7 -> exitApp()
-                else -> {}
-            }
-        }.show()
+    val items = arrayOf("New tab", "History", "Add-ons", "Clear data now…", "Auto-clear on exit…", "Search engine: " + store.engineNames[store.engineIndex()], "Downloads", "Exit")
+    AlertDialog.Builder(this).setItems(items) { _, i ->
+        when (i) {
+            0 -> newTab(HOME)
+            1 -> showHistory()
+            2 -> showAddons()
+            3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
+            4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
+            5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
+            6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
+            7 -> exitApp()
+            else -> {}
+        }
+    }.show()
     }
+    
 
     private fun chooseTypes(title: String, initial: BooleanArray, okLabel: String, onOk: (BooleanArray) -> Unit) {
         val state = initial.copyOf()
@@ -897,7 +894,7 @@ inner class TabDelegates(private val tab: Tab) :
         }.start()
     }
 
-    private fun installAddon(uri: String) {
+        private fun installAddon(uri: String) {
         rt.webExtensionController.install(uri).accept({ ext ->
             toast("Installed " + (ext?.metaData?.name ?: "add-on"))
         }, { err ->
