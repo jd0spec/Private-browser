@@ -7,12 +7,12 @@ import android.os.StatFs
 import android.os.storage.StorageManager
 import android.widget.TextView
 import androidx.preference.PreferenceManager
-import com.jhaiian.clint.R
-import com.jhaiian.clint.settings.downloads.DownloadSettingsKeys
-import com.jhaiian.clint.util.DEFAULT_MEASUREMENT_SYSTEM
-import com.jhaiian.clint.util.MEASUREMENT_SYSTEM_DECIMAL
-import com.jhaiian.clint.util.PREF_MEASUREMENT_SYSTEM
-import com.jhaiian.clint.util.formatStorageBytes
+import com.ahmad.gbrowser.R
+import com.ahmad.gbrowser.settings.downloads.DownloadSettingsKeys
+import com.ahmad.gbrowser.util.DEFAULT_MEASUREMENT_SYSTEM
+import com.ahmad.gbrowser.util.MEASUREMENT_SYSTEM_DECIMAL
+import com.ahmad.gbrowser.util.PREF_MEASUREMENT_SYSTEM
+import com.ahmad.gbrowser.util.formatStorageBytes
 import java.io.File
 import java.util.Locale
 
