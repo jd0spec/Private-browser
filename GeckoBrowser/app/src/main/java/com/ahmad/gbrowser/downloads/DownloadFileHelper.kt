@@ -11,6 +11,9 @@ object DownloadFileHelper {
     fun resolveDirectCustomDir(context: Context, item: DownloadItem? = null): File? = null
     fun isSafCustomMode(context: Context, item: DownloadItem? = null): Boolean = false
     fun needsLegacyStoragePermission(context: Context): Boolean = false
+    fun uniquePartFile(dir: File, name: String): File {
+    return File(dir, "$name.part")
+    }
     fun isInTempDir(context: Context, file: File): Boolean = file.absolutePath.startsWith(context.cacheDir.absolutePath)
     fun isPartFile(file: File): Boolean = file.name.endsWith(".part")
     fun sanitizeFileName(name: String): String = name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
