@@ -857,4 +857,73 @@ private fun stopClock(item: DownloadItem): DownloadItem =
     fun onUnmeteredOnlyChanged(context: Context, enabled: Boolean) {
         DownloadNetworkMonitor.onUnmeteredOnlyChanged(context, enabled)
     }
+    private fun dispatchOrQueue(context: Context, source: DownloadItem, record: (DownloadItem) -> Unit) {
+    var current = source
+
+    if (current.scheduledStartAtMillis > System.currentTimeMillis()) {
+        val updated = current.copy(
+            status = DownloadStatus.PAUSED, waitingForCustomSchedule = true,
+            waitingForUnmetered = false, waitingForNetwork = false, waitingForSchedule = false
+        )
+        DownloadLog.i(updated.id, "SCHEDULE") { "Waiting for scheduled start at ${DownloadLog.formatTime(updated.scheduledStartAtMillis)}" }
+        record(updated)
+        persistLater(updated)
+        DownloadCustomScheduleMonitor.schedule(context, updated.id, updated.scheduledStartAtMillis)
+        DownloadNotificationHelper.showWaitingCustomScheduleNotification(context, updated)
+        DownloadForegroundService.start(context)
+        return
+    }
+
+    if (current.scheduledStartAtMillis == 0L && !DownloadScheduleMonitor.isWithinWindow(context)) {
+        DownloadScheduleMonitor.scheduleWaitingIds.add(current.id)
+        val updated = current.copy(
+            status = DownloadStatus.PAUSED, waitingForSchedule = true,
+            waitingForUnmetered = false, waitingForNetwork = false, waitingForCustomSchedule = false
+        )
+        DownloadLog.i(updated.id, "SCHEDULE") { "Outside the download schedule window; waiting" }
+        record(updated)
+        persistLater(updated)
+        DownloadNotificationHelper.showWaitingScheduleNotification(context, updated)
+        DownloadForegroundService.start(context)
+        return
+    }
+
+    if (current.scheduledStartAtMillis != 0L) {
+        current = current.copy(scheduledStartAtMillis = 0L)
+    }
+
+    if (current.unmeteredOnly && !DownloadNetworkMonitor.isNetworkUnmetered(context)) {
+        DownloadNetworkMonitor.unmeteredPausedIds.add(current.id)
+        val updated = current.copy(status = DownloadStatus.PAUSED, waitingForUnmetered = true, waitingForCustomSchedule = false)
+        DownloadLog.i(updated.id, "NETWORK") { "Wi-Fi only download on a metered network; waiting for Wi-Fi" }
+        record(updated)
+        persistLater(updated)
+        DownloadNotificationHelper.showWaitingUnmeteredNotification(context, updated)
+        DownloadForegroundService.start(context)
+        return
+    }
+
+    if (activeCount() >= concurrentLimit(context)) {
+        val updated = current.copy(
+            status = DownloadStatus.QUEUED, waitingForUnmetered = false, waitingForNetwork = false,
+            waitingForCustomSchedule = false
+        )
+        DownloadLog.i(updated.id, "QUEUE") { "Queued \u00B7 ${activeCount()} of ${concurrentLimit(context)} download slots busy" }
+        record(updated)
+        persistLater(updated)
+        DownloadNotificationHelper.showQueuedNotification(context, updated)
+        DownloadForegroundService.start(context)
+        return
+    }
+
+    val updated = current.copy(
+        waitingForUnmetered = false, waitingForNetwork = false, waitingForCustomSchedule = false,
+        status = DownloadStatus.CONNECTING, speedBytesPerSec = 0L
+    )
+    DownloadLog.i(updated.id, "START") { "Starting immediately (${if (updated.isStream) "stream" else "direct"} download)" }
+    record(updated)
+    DownloadNotificationHelper.showProgressNotification(context, updated)
+    DownloadForegroundService.start(context)
+    if (updated.isStream) launchStreamDownload(context, updated) else launchDownload(context, updated)
+    }
 }
