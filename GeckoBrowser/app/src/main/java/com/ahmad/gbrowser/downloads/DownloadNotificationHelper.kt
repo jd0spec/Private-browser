@@ -12,18 +12,17 @@ import com.ahmad.gbrowser.MainActivity
 object DownloadNotificationHelper {
 
     fun createNotificationChannel(context: Context) {
-        val channel = NotificationChannel(
-            "clint_downloads", 
-            "Downloads", 
-            NotificationManager.IMPORTANCE_LOW
-        )
+        openChannel(context)
+    }
+
+    fun openChannel(context: Context) {
+        val channel = NotificationChannel("clint_downloads", "Downloads", NotificationManager.IMPORTANCE_LOW)
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun getBuilder(context: Context, item: DownloadItem): NotificationCompat.Builder {
         val intent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(context, item.id, intent, PendingIntent.FLAG_IMMUTABLE)
-        
         return NotificationCompat.Builder(context, "clint_downloads")
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(item.filename)
@@ -41,6 +40,11 @@ object DownloadNotificationHelper {
         context.getSystemService(NotificationManager::class.java).notify(item.id, notification)
     }
 
+    fun showProgressNotificationThrottled(context: Context, item: DownloadItem) {
+        // We just call the standard one. The OS handles notification throttling automatically.
+        showProgressNotification(context, item)
+    }
+
     fun showCompleteNotification(context: Context, item: DownloadItem) {
         val notification = NotificationCompat.Builder(context, "clint_downloads")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -52,17 +56,12 @@ object DownloadNotificationHelper {
     }
 
     fun showPausedNotification(context: Context, item: DownloadItem) {
-        val notification = getBuilder(context, item)
-            .setContentText("Paused")
-            .setOngoing(false)
-            .build()
+        val notification = getBuilder(context, item).setContentText("Paused").setOngoing(false).build()
         context.getSystemService(NotificationManager::class.java).notify(item.id, notification)
     }
 
     fun showQueuedNotification(context: Context, item: DownloadItem) {
-        val notification = getBuilder(context, item)
-            .setContentText("Queued")
-            .build()
+        val notification = getBuilder(context, item).setContentText("Queued").build()
         context.getSystemService(NotificationManager::class.java).notify(item.id, notification)
     }
 
