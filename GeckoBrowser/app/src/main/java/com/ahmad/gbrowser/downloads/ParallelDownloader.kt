@@ -506,7 +506,7 @@ internal object ParallelDownloader {
         }
         fatal.get()?.let { return ParallelOutcome.Failed(item, it) }
         if (total != totalBytes || finalRanges.any { !it.complete }) {
-            return ParallelOutcome.Failed(item, context.getString(com.jhaiian.clint.R.string.download_error_size_mismatch, DownloadLog.formatBytes(total), DownloadLog.formatBytes(totalBytes)))
+            return ParallelOutcome.Failed(item, context.getString(com.ahmad.gbrowser.R.string.download_error_size_mismatch, DownloadLog.formatBytes(total), DownloadLog.formatBytes(totalBytes)))
         }
         return ParallelOutcome.Completed(item.copy(partMap = ""))
     }
