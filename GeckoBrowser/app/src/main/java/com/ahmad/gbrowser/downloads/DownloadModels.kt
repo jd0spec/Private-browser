@@ -21,19 +21,19 @@ enum class DownloadStatus {
 enum class StreamStage { NONE, VIDEO, AUDIO, MERGING }
 
 internal fun streamStageLabel(context: android.content.Context, item: DownloadItem): String? = when (item.streamStage) {
-    StreamStage.VIDEO -> context.getString(com.jhaiian.clint.R.string.download_stage_video)
-    StreamStage.AUDIO -> context.getString(com.jhaiian.clint.R.string.download_stage_audio)
-    StreamStage.MERGING -> context.getString(com.jhaiian.clint.R.string.download_stage_merging)
+    StreamStage.VIDEO -> context.getString(com.ahmad.gbrowser.R.string.download_stage_video)
+    StreamStage.AUDIO -> context.getString(com.ahmad.gbrowser.R.string.download_stage_audio)
+    StreamStage.MERGING -> context.getString(com.ahmad.gbrowser.R.string.download_stage_merging)
     StreamStage.NONE -> null
 }
 
 internal fun muxStatusLabel(context: android.content.Context, item: DownloadItem): String =
     when {
         item.streamStage == StreamStage.MERGING && item.muxProgress > 0 ->
-            context.getString(com.jhaiian.clint.R.string.download_stage_merging_progress, item.muxProgress.coerceIn(0, 99))
+            context.getString(com.ahmad.gbrowser.R.string.download_stage_merging_progress, item.muxProgress.coerceIn(0, 99))
         item.streamStage == StreamStage.NONE && item.muxProgress > 0 ->
             context.getString(com.jhaiian.clint.R.string.download_status_muxing_progress, item.muxProgress.coerceIn(0, 99))
-        else -> streamStageLabel(context, item) ?: context.getString(com.jhaiian.clint.R.string.download_status_muxing)
+        else -> streamStageLabel(context, item) ?: context.getString(com.ahmad.gbrowser.R.string.download_status_muxing)
     }
 
 internal fun muxProgressFraction(item: DownloadItem): Float? =
