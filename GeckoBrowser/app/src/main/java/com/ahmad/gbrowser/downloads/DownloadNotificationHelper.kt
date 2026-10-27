@@ -1,6 +1,6 @@
 package com.ahmad.gbrowser.downloads
 
-import com.jhaiian.clint.util.formatFileSize
+import com.ahmad.gbrowser.util.formatFileSize
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -11,16 +11,16 @@ import android.content.Intent
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
-import com.jhaiian.clint.R
-import com.jhaiian.clint.settings.downloads.DownloadSettingsKeys
+import com.ahmad.gbrowser.R
+import com.ahmad.gbrowser.settings.downloads.DownloadSettingsKeys
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal object DownloadNotificationHelper {
 
-    const val DOWNLOAD_GROUP_KEY = "com.jhaiian.clint.downloads.GROUP"
-    private const val COMPLETE_TAG = "com.jhaiian.clint.downloads.COMPLETE"
+    const val DOWNLOAD_GROUP_KEY = "com.ahmad.gbrowser.downloads.GROUP"
+    private const val COMPLETE_TAG = "com.ahmad.gbrowser.downloads.COMPLETE"
     private const val PROGRESS_NOTIFY_INTERVAL_MS = 1000L
     private const val GLOBAL_WINDOW_MS = 1000L
     private const val GLOBAL_PROGRESS_POSTS_PER_WINDOW = 4
