@@ -1,6 +1,5 @@
 name: Unzip ADM Files
 on: workflow_dispatch
-
 permissions:
   contents: write
 
@@ -9,17 +8,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unzip and Move Files
+
+      - name: Unzip files in place
+        working-directory: GeckoBrowser/app/src/main/java/com/ahmad/gbrowser/downloads
         run: |
-          unzip -q adm.zip -d temp_adm
-          mkdir -p GeckoBrowser/app/src/main/java/com/ahmad/gbrowser/downloads
-          mv temp_adm/* GeckoBrowser/app/src/main/java/com/ahmad/gbrowser/downloads/
-          rm -rf temp_adm adm.zip
-          
+          unzip -o adm.zip
+          rm adm.zip
+
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "Auto-unzipped ADM core files"
+          git commit -m "Extracted ADM files in place"
           git push
