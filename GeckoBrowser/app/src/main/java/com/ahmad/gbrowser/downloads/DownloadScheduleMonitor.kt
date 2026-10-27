@@ -11,7 +11,7 @@ import androidx.work.ListenableWorker.Result
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.jhaiian.clint.settings.downloads.DownloadSettingsKeys
+import com.ahmad.gbrowser.settings.downloads.DownloadSettingsKeys
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
