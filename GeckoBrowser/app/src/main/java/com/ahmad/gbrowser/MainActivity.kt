@@ -1,5 +1,6 @@
 package com.ahmad.gbrowser
 
+import com.ahmad.gbrowser.downloads.DownloadsActivity
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
@@ -141,6 +142,9 @@ class MainActivity : ComponentActivity() {
     rt.webExtensionController.setPromptDelegate(addonPrompt)
     
     geckoView = GeckoView(this)
+
+    // Initialize the engine to create the notification channel
+ClintDownloadManager.init(this)
 
     setContent {
         MaterialTheme(
@@ -726,7 +730,7 @@ inner class TabDelegates(private val tab: Tab) :
                 3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
                 4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
                 5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
-                6 -> try {
+                6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
     startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
 } catch (e: Exception) {
     toast("Downloads are saving in the background!")
