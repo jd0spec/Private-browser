@@ -4,7 +4,7 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
-    id 'kotlin-kapt' // <--- NEW: Needed for the Room Database
+    id 'kotlin-kapt'
 }
 
 android {
@@ -70,7 +70,7 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'com.google.android.material:material:1.11.0'
 
-    // --- NEW: CLINTGECKO ADM DEPENDENCIES ---
+    // --- CLINTGECKO ADM DEPENDENCIES ---
     // Room Database (for saving download state)
     implementation "androidx.room:room-runtime:2.6.1"
     implementation "androidx.room:room-ktx:2.6.1"
@@ -81,4 +81,7 @@ dependencies {
 
     // Coroutines (for the parallel downloader engine)
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+
+    // OkHttp (Required by ClintDownloadManager for network requests)
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
