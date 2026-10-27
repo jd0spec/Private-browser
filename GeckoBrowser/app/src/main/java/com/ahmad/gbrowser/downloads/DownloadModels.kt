@@ -32,7 +32,7 @@ internal fun muxStatusLabel(context: android.content.Context, item: DownloadItem
         item.streamStage == StreamStage.MERGING && item.muxProgress > 0 ->
             context.getString(com.ahmad.gbrowser.R.string.download_stage_merging_progress, item.muxProgress.coerceIn(0, 99))
         item.streamStage == StreamStage.NONE && item.muxProgress > 0 ->
-            context.getString(com.jhaiian.clint.R.string.download_status_muxing_progress, item.muxProgress.coerceIn(0, 99))
+            context.getString(com.ahmad.gbrowser.R.string.download_status_muxing_progress, item.muxProgress.coerceIn(0, 99))
         else -> streamStageLabel(context, item) ?: context.getString(com.ahmad.gbrowser.R.string.download_status_muxing)
     }
 
