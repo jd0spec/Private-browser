@@ -77,7 +77,6 @@ import java.net.URL
 
 // --- ADM IMPORTS ---
 import com.ahmad.gbrowser.downloads.ClintDownloadManager
-import com.ahmad.gbrowser.downloads.DownloadsActivity
 
 class MainActivity : ComponentActivity() {
 
