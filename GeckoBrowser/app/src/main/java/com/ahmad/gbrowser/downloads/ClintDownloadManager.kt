@@ -858,4 +858,3 @@ private fun stopClock(item: DownloadItem): DownloadItem =
         DownloadNetworkMonitor.onUnmeteredOnlyChanged(context, enabled)
     }
 }
-```
