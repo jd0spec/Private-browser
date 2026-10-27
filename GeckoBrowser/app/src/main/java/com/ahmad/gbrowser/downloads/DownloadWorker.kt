@@ -41,6 +41,7 @@ object DownloadWorker {
                         status = DownloadStatus.DOWNLOADING
                     )
                     ClintDownloadManager.publish(updated)
+                DownloadNotificationHelper.showProgressNotification(context, updated)
                 }
 
                 outputStream.close()
