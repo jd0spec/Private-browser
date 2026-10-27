@@ -97,7 +97,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var store: Store
     private lateinit var rt: GeckoRuntime
     private lateinit var geckoView: GeckoView
-    private lateinit var downloadManager: ClintDownloadManager // <--- NEW ADM
     
     // Compose UI State
     private var uiUrl by mutableStateOf("")
@@ -142,9 +141,6 @@ class MainActivity : ComponentActivity() {
     rt = runtime!!
     rt.webExtensionController.setPromptDelegate(addonPrompt)
     
-    // INITIALIZE ADM
-    downloadManager = ClintDownloadManager(this)
-
     geckoView = GeckoView(this)
 
     setContent {
@@ -580,13 +576,13 @@ inner class TabDelegates(private val tab: Tab) :
                 toast("Cannot download live/DRM streams directly.")
             } else {
                 val name = URLUtil.guessFileName(videoUrl, null, "video/mp4")
-                // SEND TO ADM
-                downloadManager.enqueue(
+                
+                // SEND TO ADM (Fixed parameters)
+                ClintDownloadManager.enqueue(
+                    context = this@MainActivity,
                     url = videoUrl,
-                    fileName = name,
-                    mimeType = "video/mp4",
-                    fileSize = 0L,
-                    referer = null
+                    filename = name,
+                    userAgent = ""
                 )
                 toast("Downloading video via ADM...")
             }
@@ -633,13 +629,12 @@ inner class TabDelegates(private val tab: Tab) :
         val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
         val name = URLUtil.guessFileName(uri, cd, ct)
         
-        // SEND NORMAL DOWNLOADS TO ADM
-        downloadManager.enqueue(
+        // SEND NORMAL DOWNLOADS TO ADM (Fixed parameters)
+        ClintDownloadManager.enqueue(
+            context = this@MainActivity,
             url = uri,
-            fileName = name,
-            mimeType = ct,
-            fileSize = 0L,
-            referer = null
+            filename = name,
+            userAgent = ""
         )
         toast("Download started via ADM")
     }
