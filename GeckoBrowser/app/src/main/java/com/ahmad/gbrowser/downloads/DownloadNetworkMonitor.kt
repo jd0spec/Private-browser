@@ -19,3 +19,4 @@ object DownloadNetworkMonitor {
 
     fun onUnmeteredOnlyChanged(context: Context, enabled: Boolean) {}
 }
+
