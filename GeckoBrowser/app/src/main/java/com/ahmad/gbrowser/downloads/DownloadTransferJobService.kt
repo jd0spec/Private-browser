@@ -1,1 +1,13 @@
-GeckoBrowser/app/src/main/java/com/ahmad/gbrowser/downloads/ParallelDownloader.kt
+package com.ahmad.gbrowser.downloads
+
+import android.app.Service
+import android.content.Intent
+import android.os.IBinder
+
+class DownloadTransferJobService : Service() {
+    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        stopSelf()
+        return START_NOT_STICKY
+    }
+}
