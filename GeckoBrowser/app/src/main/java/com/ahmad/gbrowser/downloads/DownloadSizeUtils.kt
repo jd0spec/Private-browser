@@ -1,7 +1,9 @@
 package com.ahmad.gbrowser.downloads
 
 object DownloadSizeUtils {
-    fun format(bytes: Long): String {
+    fun format(bytes: Long): String = formatBytes(bytes)
+    
+    fun formatBytes(bytes: Long): String {
         if (bytes <= 0) return "0 B"
         val units = arrayOf("B", "KB", "MB", "GB", "TB")
         val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
