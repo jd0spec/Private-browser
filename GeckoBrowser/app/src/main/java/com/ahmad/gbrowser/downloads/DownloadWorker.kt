@@ -11,7 +11,6 @@ object DownloadWorker {
     suspend fun run(context: Context, item: DownloadItem) {
         withContext(Dispatchers.IO) {
             try {
-                // Save to standard Downloads folder
                 val destFile = File(DownloadFileHelper.resolveDownloadDir(), item.filename)
                 destFile.parentFile?.mkdirs()
 
@@ -36,11 +35,10 @@ object DownloadWorker {
                     outputStream.write(buffer, 0, bytesRead)
                     totalRead += bytesRead
                     
-                    // Update progress bar
                     val updated = item.copy(
                         bytesDownloaded = totalRead,
                         totalBytes = if (contentLength > 0) contentLength else item.totalBytes,
-                        status = DownloadStatus.CONNECTING // Using CONNECTING if DOWNLOADING isn't defined
+                        status = DownloadStatus.DOWNLOADING
                     )
                     ClintDownloadManager.publish(updated)
                 }
@@ -48,7 +46,6 @@ object DownloadWorker {
                 outputStream.close()
                 inputStream.close()
 
-                // Mark as complete
                 val complete = item.copy(
                     bytesDownloaded = totalRead,
                     totalBytes = if (contentLength > 0) contentLength else totalRead,
@@ -78,7 +75,5 @@ object DownloadWorker {
         ClintDownloadManager.tryDequeueNext(context)
     }
 
-    fun moveTempToSaf(context: Context, item: DownloadItem) {
-        // Stubbed out because we are saving directly to standard storage
-    }
+    fun moveTempToSaf(context: Context, item: DownloadItem) { }
 }
