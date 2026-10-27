@@ -1,5 +1,7 @@
 package com.ahmad.gbrowser.downloads
 
+import com.ahmad.gbrowser.downloads.DownloadSettingsKeys
+import android.preference.PreferenceManager
 import android.app.NotificationManager
 import android.content.Context
 import android.net.Uri
