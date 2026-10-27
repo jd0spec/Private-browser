@@ -727,7 +727,11 @@ inner class TabDelegates(private val tab: Tab) :
                 3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
                 4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
                 5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
-                6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java)) // <--- OPEN ADM UI
+                6 -> try { 
+    startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) 
+} catch (e: Exception) { 
+    toast("Downloads are saving in the background!") 
+                }
                 7 -> exitApp()
                 else -> {}
             }
