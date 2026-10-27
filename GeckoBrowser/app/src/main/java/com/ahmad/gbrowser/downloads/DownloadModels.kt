@@ -6,7 +6,6 @@ enum class DownloadStatus {
     QUEUED, CONNECTING, ALLOCATING, DOWNLOADING, RETRYING, DECRYPTING, MUXING, CONVERTING, COPYING_TEMP, DELETING_TEMP, PAUSED, FAILED, COMPLETE;
 
     companion object {
-
         val ACTIVELY_WORKING: Set<DownloadStatus> =
             setOf(CONNECTING, DOWNLOADING, ALLOCATING, DECRYPTING, MUXING, CONVERTING, COPYING_TEMP, DELETING_TEMP, RETRYING)
 
@@ -20,20 +19,22 @@ enum class DownloadStatus {
 
 enum class StreamStage { NONE, VIDEO, AUDIO, MERGING }
 
+// FIXED: Replaced R.string references with hardcoded text
 internal fun streamStageLabel(context: android.content.Context, item: DownloadItem): String? = when (item.streamStage) {
-    StreamStage.VIDEO -> context.getString(com.ahmad.gbrowser.R.string.download_stage_video)
-    StreamStage.AUDIO -> context.getString(com.ahmad.gbrowser.R.string.download_stage_audio)
-    StreamStage.MERGING -> context.getString(com.ahmad.gbrowser.R.string.download_stage_merging)
+    StreamStage.VIDEO -> "Downloading video..."
+    StreamStage.AUDIO -> "Downloading audio..."
+    StreamStage.MERGING -> "Merging streams..."
     StreamStage.NONE -> null
 }
 
+// FIXED: Replaced R.string references with hardcoded text
 internal fun muxStatusLabel(context: android.content.Context, item: DownloadItem): String =
     when {
         item.streamStage == StreamStage.MERGING && item.muxProgress > 0 ->
-            context.getString(com.ahmad.gbrowser.R.string.download_stage_merging_progress, item.muxProgress.coerceIn(0, 99))
+            "Merging progress: ${item.muxProgress.coerceIn(0, 99)}%"
         item.streamStage == StreamStage.NONE && item.muxProgress > 0 ->
-            context.getString(com.ahmad.gbrowser.R.string.download_status_muxing_progress, item.muxProgress.coerceIn(0, 99))
-        else -> streamStageLabel(context, item) ?: context.getString(com.ahmad.gbrowser.R.string.download_status_muxing)
+            "Muxing progress: ${item.muxProgress.coerceIn(0, 99)}%"
+        else -> streamStageLabel(context, item) ?: "Processing..."
     }
 
 internal fun muxProgressFraction(item: DownloadItem): Float? =
@@ -62,9 +63,7 @@ data class DownloadItem(
     val waitingForUnmetered: Boolean = false,
     val waitingForNetwork: Boolean = false,
     val waitingForSchedule: Boolean = false,
-
     val scheduledStartAtMillis: Long = 0L,
-
     val waitingForCustomSchedule: Boolean = false,
     val activeElapsedMs: Long = 0L,
     @Transient val activeStartedAt: Long = 0L,
@@ -77,20 +76,15 @@ data class DownloadItem(
     val unmeteredOnly: Boolean = false,
     val splitParts: Int = DownloadAutoTuner.AUTO,
     val multithreadingParts: Int = DownloadAutoTuner.AUTO,
-
     val speedLimitBytesPerSec: Long = 0L,
     val locationMode: String = "default",
     val customLocationUri: String? = null,
     val categorizeEnabled: Boolean = false,
-
     val completedPartsMask: Long = 0L,
-
     val partOffsets: String = "",
-
     val partMap: String = "",
     val etag: String? = null,
     val lastModified: String? = null,
-
     val isStream: Boolean = false,
     val streamVideoUrl: String = "",
     val streamAudioUrl: String? = null,
