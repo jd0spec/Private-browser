@@ -39,22 +39,25 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,6 +67,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -98,6 +102,8 @@ class MainActivity : ComponentActivity() {
         var canBack = false
         var canForward = false
     }
+
+    data class Shortcut(val id: String, val name: String, val url: String)
 
     private lateinit var store: Store
     private lateinit var rt: GeckoRuntime
@@ -206,11 +212,19 @@ fun BrowserScreen() {
         }
     }
 }
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomePage(onSearch: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    var shortcuts by remember { mutableStateOf(listOf(
+        Shortcut("1", "Web", "https://duckduckgo.com"),
+        Shortcut("2", "Video", "https://youtube.com"),
+        Shortcut("3", "News", "https://news.google.com")
+    )) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingShortcut by remember { mutableStateOf<Shortcut?>(null) }
 
     Column(
         modifier = Modifier
@@ -218,8 +232,9 @@ fun HomePage(onSearch: (String) -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
+        Spacer(modifier = Modifier.height(48.dp))
         Text(
             text = "Gecko",
             style = MaterialTheme.typography.displayMedium,
@@ -233,39 +248,27 @@ fun HomePage(onSearch: (String) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 2.dp
         ) {
             Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 12.dp)
-                )
+                Icon(Icons.Default.Search, "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(12.dp))
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
                     singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        imeAction = ImeAction.Search
-                    ),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                         onSearch = {
                             if (query.isNotBlank()) {
@@ -276,11 +279,7 @@ fun HomePage(onSearch: (String) -> Unit) {
                     ),
                     decorationBox = { innerTextField ->
                         if (query.isEmpty()) {
-                            Text(
-                                text = "Search or type URL",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 16.sp
-                            )
+                            Text("Search or type URL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         innerTextField()
                     }
@@ -288,28 +287,105 @@ fun HomePage(onSearch: (String) -> Unit) {
             }
         }
 
-        Spacer(modifier = Modifier.height(64.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            QuickLink(icon = Icons.Default.Language, label = "Web") { onSearch("https://duckduckgo.com") }
-            QuickLink(icon = Icons.Default.PlayArrow, label = "Video") { onSearch("https://youtube.com") }
-            QuickLink(icon = Icons.Default.Info, label = "News") { onSearch("https://news.google.com") }
+            items(shortcuts) { shortcut ->
+                QuickLink(
+                    name = shortcut.name,
+                    onClick = { onSearch(shortcut.url) },
+                    onLongClick = { editingShortcut = shortcut }
+                )
+            }
+            item {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { showAddDialog = true }
+                ) {
+                    Surface(
+                        modifier = Modifier.size(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, "Add", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Add", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
         }
+    }
+
+    if (showAddDialog || editingShortcut != null) {
+        var nameState by remember { mutableStateOf(editingShortcut?.name ?: "") }
+        var urlState by remember { mutableStateOf(editingShortcut?.url ?: "") }
+
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; editingShortcut = null },
+            title = { Text(if (editingShortcut == null) "Add Shortcut" else "Edit Shortcut") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = nameState,
+                        onValueChange = { nameState = it },
+                        label = { Text("Name") },
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = urlState,
+                        onValueChange = { urlState = it },
+                        label = { Text("URL") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (nameState.isNotBlank() && urlState.isNotBlank()) {
+                        if (editingShortcut == null) {
+                            shortcuts = shortcuts + Shortcut(System.currentTimeMillis().toString(), nameState, urlState)
+                        } else {
+                            shortcuts = shortcuts.map { if (it.id == editingShortcut?.id) it.copy(name = nameState, url = urlState) else it }
+                        }
+                    }
+                    showAddDialog = false
+                    editingShortcut = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    if (editingShortcut != null) {
+                        TextButton(onClick = {
+                            shortcuts = shortcuts.filter { it.id != editingShortcut?.id }
+                            showAddDialog = false
+                            editingShortcut = null
+                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = { showAddDialog = false; editingShortcut = null }) { Text("Cancel") }
+                }
+            }
+        )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QuickLink(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
+fun QuickLink(name: String, onClick: () -> Unit, onLongClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
     ) {
         Surface(
             modifier = Modifier.size(56.dp),
@@ -317,18 +393,16 @@ fun QuickLink(
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                Text(name.take(1).uppercase(), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = label,
+            text = name,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -353,7 +427,11 @@ fun BottomBar() {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        IconButton(onClick = { go(HOME) }) {
+        IconButton(onClick = { 
+            uiUrl = HOME
+            curTab()?.url = HOME
+            geckoView.releaseSession()
+        }) {
             Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.onSurface)
         }
 
@@ -380,15 +458,10 @@ fun BottomBar() {
                     value = if (textFieldValue == HOME || textFieldValue == "about:blank") "" else textFieldValue,
                     onValueChange = { textFieldValue = it },
                     modifier = Modifier.weight(1f),
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface),
                     singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        imeAction = ImeAction.Go,
-                        keyboardType = KeyboardType.Uri
-                    ),
+                    maxLines = 1,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Go, keyboardType = KeyboardType.Uri),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                         onGo = {
                             go(textFieldValue)
@@ -400,7 +473,9 @@ fun BottomBar() {
                             Text(
                                 text = "Search or enter address",
                                 fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         innerTextField()
@@ -424,229 +499,234 @@ fun BottomBar() {
         }
     }
 }
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        handleIntent(intent)
-    }
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    handleIntent(intent)
+}
 
-    private fun handleIntent(i: Intent?) {
-        if (i?.action == Intent.ACTION_VIEW) {
-            val u = i.dataString
-            if (!u.isNullOrEmpty()) newTab(u)
-        }
+private fun handleIntent(i: Intent?) {
+    if (i?.action == Intent.ACTION_VIEW) {
+        val u = i.dataString
+        if (!u.isNullOrEmpty()) newTab(u)
     }
+}
 
-    override fun onStop() {
-        super.onStop()
-        if (!skipSave) saveTabs()
+override fun onStop() {
+    super.onStop()
+    if (!skipSave) saveTabs()
+}
+
+override fun onDestroy() {
+    try { geckoView.releaseSession() } catch (e: Exception) {}
+    for (t in tabs) {
+        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+        t.session = null
     }
+    super.onDestroy()
+}
 
-    override fun onDestroy() {
-        try { geckoView.releaseSession() } catch (e: Exception) {}
-        for (t in tabs) {
-            try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-            t.session = null
-        }
-        super.onDestroy()
+@Deprecated("Deprecated in Java")
+@Suppress("DEPRECATION")
+override fun onBackPressed() {
+    if (fullscreen) {
+        curTab()?.session?.exitFullScreen()
+        return
     }
-
-    @Deprecated("Deprecated in Java")
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        if (fullscreen) {
-            curTab()?.session?.exitFullScreen()
-            return
-        }
-        val t = curTab()
-        if (t != null && t.canBack) {
-            t.session?.goBack(true)
-            return
-        }
-        if (tabs.size > 1) {
-            closeTab(current)
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        if (now - lastBack < 2000) {
-            exitApp()
-        } else {
-            lastBack = now
-            toast("Press back again to exit")
-        }
+    val t = curTab()
+    if (t != null && t.canBack) {
+        t.session?.goBack(true)
+        return
     }
+    if (tabs.size > 1) {
+        closeTab(current)
+        return
+    }
+    val now = SystemClock.uptimeMillis()
+    if (now - lastBack < 2000) {
+        exitApp()
+    } else {
+        lastBack = now
+        toast("Press back again to exit")
+    }
+}
 
-    @Deprecated("Deprecated in Java")
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_FILE) {
-            prompts.onFileResult(resultCode, data)
-        } else if (requestCode == REQ_XPI) {
-            val uri = data?.data
-            if (resultCode == RESULT_OK && uri != null) {
-                Thread {
-                    try {
-                        val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
-                        contentResolver.openInputStream(uri)!!.use { i ->
-                            f.outputStream().use { o -> i.copyTo(o) }
-                        }
-                        runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
-                    } catch (e: Exception) {
-                        toast("Could not read that file")
+@Deprecated("Deprecated in Java")
+@Suppress("DEPRECATION")
+override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode == REQ_FILE) {
+        prompts.onFileResult(resultCode, data)
+    } else if (requestCode == REQ_XPI) {
+        val uri = data?.data
+        if (resultCode == RESULT_OK && uri != null) {
+            Thread {
+                try {
+                    val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
+                    contentResolver.openInputStream(uri)!!.use { i ->
+                        f.outputStream().use { o -> i.copyTo(o) }
                     }
-                }.start()
-            }
-        }
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-    private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-
-    private fun updateButtons() {
-        val t = curTab()
-        runOnUiThread {
-            uiTabCount = tabs.size
-            uiCanBack = t?.canBack == true
-            uiCanForward = t?.canForward == true
-        }
-    }
-
-    private fun hideKeyboard() {
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(geckoView.windowToken, 0)
-    }
-
-    private fun setFullscreen(on: Boolean) {
-        runOnUiThread {
-            fullscreen = on
-            uiIsFullscreen = on
-            val c = window.insetsController
-            if (c != null) {
-                if (on) {
-                    c.hide(WindowInsets.Type.systemBars())
-                    c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                } else {
-                    c.show(WindowInsets.Type.systemBars())
+                    runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
+                } catch (e: Exception) {
+                    toast("Could not read that file")
                 }
+            }.start()
+        }
+    }
+}
+
+private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
+
+private fun updateButtons() {
+    val t = curTab()
+    runOnUiThread {
+        uiTabCount = tabs.size
+        uiCanBack = t?.canBack == true
+        uiCanForward = t?.canForward == true
+    }
+}
+
+private fun hideKeyboard() {
+    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    imm.hideSoftInputFromWindow(geckoView.windowToken, 0)
+}
+
+private fun setFullscreen(on: Boolean) {
+    runOnUiThread {
+        fullscreen = on
+        uiIsFullscreen = on
+        val c = window.insetsController
+        if (c != null) {
+            if (on) {
+                c.hide(WindowInsets.Type.systemBars())
+                c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                c.show(WindowInsets.Type.systemBars())
             }
         }
     }
+}
 
-    private fun curTab(): Tab? = tabs.getOrNull(current)
+private fun curTab(): Tab? = tabs.getOrNull(current)
 
-    private fun toUrl(input: String): String {
-        val t = input.trim()
-        if (t.isEmpty() || t == HOME) return HOME
-        val lower = t.lowercase()
-        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
-            lower.startsWith("file:") || lower.startsWith("moz-extension:")
-        ) return t
-        if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
-        if (!t.contains(' ') && t.contains('.')) return "https://$t"
-        return store.searchUrl() + Uri.encode(t)
-    }
+private fun toUrl(input: String): String {
+    val t = input.trim()
+    if (t.isEmpty() || t == HOME) return HOME
+    val lower = t.lowercase()
+    if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
+        lower.startsWith("file:") || lower.startsWith("moz-extension:")
+    ) return t
+    if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
+    if (!t.contains(' ') && t.contains('.')) return "https://$t"
+    return store.searchUrl() + Uri.encode(t)
+}
 
-    private fun go(text: String) {
-        val url = toUrl(text)
-        val t = curTab()
-        if (t == null) newTab(url) else {
-            t.url = url
+private fun go(text: String) {
+    val url = toUrl(text)
+    val t = curTab()
+    if (t == null) newTab(url) else {
+        t.url = url
+        if (url == HOME) {
+            t.session?.loadUri("about:blank")
+            uiUrl = HOME
+            geckoView.releaseSession()
+        } else {
             t.session?.loadUri(url)
         }
-        hideKeyboard()
-        geckoView.requestFocus()
     }
+    hideKeyboard()
+    geckoView.requestFocus()
+}
 
-    private fun newTab(url: String, select: Boolean = true): Tab {
-        val t = Tab(url)
-        tabs.add(t)
-        if (select) selectTab(tabs.size - 1) else updateButtons()
-        return t
+private fun newTab(url: String, select: Boolean = true): Tab {
+    val t = Tab(url)
+    tabs.add(t)
+    if (select) selectTab(tabs.size - 1) else updateButtons()
+    return t
+}
+
+private fun ensureSession(t: Tab): GeckoSession {
+    t.session?.let { return it }
+    val s = GeckoSession()
+    val d = TabDelegates(t)
+    s.contentDelegate = d
+    s.progressDelegate = d
+    s.navigationDelegate = d
+    s.promptDelegate = prompts
+    s.open(rt)
+    t.session = s
+    if (t.url.isNotEmpty() && t.url != HOME) s.loadUri(t.url)
+    return s
+}
+
+private fun selectTab(i: Int) {
+    if (i !in tabs.indices) return
+    tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
+    current = i
+    val t = tabs[i]
+    val s = ensureSession(t)
+    geckoView.releaseSession()
+    geckoView.setSession(s)
+    s.setActive(true)
+    runOnUiThread { uiUrl = t.url }
+    uiProgress = 0
+    uiIsLoading = false
+    updateButtons()
+}
+
+private fun closeTab(i: Int) {
+    if (i !in tabs.indices) return
+    val t = tabs[i]
+    val wasCurrent = (i == current)
+    if (wasCurrent) geckoView.releaseSession()
+    t.session?.let { if (it.isOpen) it.close() }
+    t.session = null
+    tabs.removeAt(i)
+    if (tabs.isEmpty()) {
+        current = -1
+        newTab(HOME)
+        return
     }
-
-    private fun ensureSession(t: Tab): GeckoSession {
-        t.session?.let { return it }
-        val s = GeckoSession()
-        val d = TabDelegates(t)
-        s.contentDelegate = d
-        s.progressDelegate = d
-        s.navigationDelegate = d
-        s.promptDelegate = prompts
-        s.open(rt)
-        t.session = s
-        if (t.url.isNotEmpty() && t.url != HOME) s.loadUri(t.url)
-        return s
-    }
-
-    private fun selectTab(i: Int) {
-        if (i !in tabs.indices) return
-        tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
-        current = i
-        val t = tabs[i]
-        val s = ensureSession(t)
-        geckoView.releaseSession()
-        geckoView.setSession(s)
-        s.setActive(true)
-        runOnUiThread { uiUrl = t.url }
-        uiProgress = 0
-        uiIsLoading = false
+    if (wasCurrent) {
+        current = -1
+        selectTab(minOf(i, tabs.size - 1))
+    } else {
+        if (i < current) current--
         updateButtons()
     }
+}
 
-    private fun closeTab(i: Int) {
-        if (i !in tabs.indices) return
-        val t = tabs[i]
-        val wasCurrent = (i == current)
-        if (wasCurrent) geckoView.releaseSession()
+private fun closeAllTabs() {
+    geckoView.releaseSession()
+    for (t in tabs) {
         t.session?.let { if (it.isOpen) it.close() }
         t.session = null
-        tabs.removeAt(i)
-        if (tabs.isEmpty()) {
-            current = -1
-            newTab(HOME)
-            return
-        }
-        if (wasCurrent) {
-            current = -1
-            selectTab(minOf(i, tabs.size - 1))
-        } else {
-            if (i < current) current--
-            updateButtons()
-        }
     }
+    tabs.clear()
+    current = -1
+}
 
-    private fun closeAllTabs() {
-        geckoView.releaseSession()
-        for (t in tabs) {
-            t.session?.let { if (it.isOpen) it.close() }
-            t.session = null
-        }
-        tabs.clear()
-        current = -1
+private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
+
+private fun restoreTabs() {
+    val (saved, cur) = store.loadTabs()
+    if (saved.isEmpty() || (saved.size == 1 && saved[0].first == "https://duckduckgo.com")) {
+        store.clearTabs()
+        newTab(HOME)
+        return
     }
+    for ((u, t) in saved) tabs.add(Tab(u, t))
+    selectTab(cur.coerceIn(0, tabs.size - 1))
+}
 
-    private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
-
-    private fun restoreTabs() {
-        val (saved, cur) = store.loadTabs()
-        if (saved.isEmpty() || (saved.size == 1 && saved[0].first == "https://duckduckgo.com")) {
-            store.clearTabs()
-            newTab(HOME)
-            return
-        }
-        for ((u, t) in saved) tabs.add(Tab(u, t))
-        selectTab(cur.coerceIn(0, tabs.size - 1))
+private fun recover(t: Tab) {
+    runOnUiThread {
+        val wasCurrent = tabs.indexOf(t) == current
+        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+        t.session = null
+        if (wasCurrent) selectTab(current)
     }
-
-    private fun recover(t: Tab) {
-        runOnUiThread {
-            val wasCurrent = tabs.indexOf(t) == current
-            try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-            t.session = null
-            if (wasCurrent) selectTab(current)
-        }
-    }
-
+}
     inner class TabDelegates(private val tab: Tab) :
         GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
 
@@ -929,7 +1009,7 @@ fun BottomBar() {
         }
     }
 
-        private val addonPrompt = object : WebExtensionController.PromptDelegate {
+    private val addonPrompt = object : WebExtensionController.PromptDelegate {
         override fun onInstallPromptRequest(extension: WebExtension, permissions: Array<String>, origins: Array<String>, dataCollectionPermissions: Array<String>): GeckoResult<WebExtension.PermissionPromptResponse>? {
             val res = GeckoResult<WebExtension.PermissionPromptResponse>()
             runOnUiThread {
