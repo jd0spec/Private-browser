@@ -48,8 +48,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -179,11 +181,18 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BrowserScreen() {
     Scaffold(
-        topBar = { if (!uiIsFullscreen) TopBar() },
         bottomBar = { if (!uiIsFullscreen) BottomBar() }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            // If URL is HOME or about:blank, show the Compose Homepage
+            
+            if (uiIsLoading) {
+                LinearProgressIndicator(
+                    progress = { uiProgress / 100f },
+                    modifier = Modifier.fillMaxWidth().height(3.dp).align(Alignment.TopCenter),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             if (uiUrl == HOME || uiUrl == "about:blank" || uiUrl.isEmpty()) {
                 HomePage { searchQuery ->
                     go(searchQuery)
@@ -194,117 +203,6 @@ fun BrowserScreen() {
                     modifier = Modifier.fillMaxSize()
                 )
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TopBar() {
-    var textFieldValue by remember { mutableStateOf(uiUrl) }
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    LaunchedEffect(uiUrl) { 
-        if (textFieldValue != uiUrl && uiUrl != HOME) textFieldValue = uiUrl 
-    }
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp)
-                .statusBarsPadding(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = androidx.compose.ui.graphics.Color(0xFFE7E0EC)
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    BasicTextField(
-                        value = if (textFieldValue == HOME || textFieldValue == "about:blank") "" else textFieldValue,
-                        onValueChange = { textFieldValue = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 15.sp,
-                            color = androidx.compose.ui.graphics.Color(0xFF1C1B1F)
-                        ),
-                        singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            imeAction = ImeAction.Go,
-                            keyboardType = KeyboardType.Uri
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onGo = { 
-                                go(textFieldValue) 
-                                keyboardController?.hide()
-                            }
-                        ),
-                        decorationBox = { innerTextField ->
-                            if (textFieldValue.isEmpty() || textFieldValue == HOME || textFieldValue == "about:blank") {
-                                Text(
-                                    text = "Search or enter address",
-                                    fontSize = 15.sp,
-                                    color = androidx.compose.ui.graphics.Color.Gray
-                                )
-                            }
-                            innerTextField()
-                        }
-                    )
-                }
-            }
-            
-            IconButton(onClick = { curTab()?.session?.reload(GeckoSession.LOAD_FLAGS_NONE) }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = androidx.compose.ui.graphics.Color(0xFF6750A4))
-            }
-        }
-        
-        if (uiIsLoading) {
-            LinearProgressIndicator(
-                progress = { uiProgress / 100f },
-                modifier = Modifier.fillMaxWidth().height(3.dp),
-                color = androidx.compose.ui.graphics.Color(0xFF6750A4)
-            )
-        }
-    }
-}
-
-@Composable
-fun BottomBar() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(androidx.compose.ui.graphics.Color(0xFFFFFBFE))
-            .navigationBarsPadding()
-            .height(56.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = { if (uiCanBack) curTab()?.session?.goBack(true) }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (uiCanBack) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.Gray)
-        }
-        IconButton(onClick = { if (uiCanForward) curTab()?.session?.goForward(true) }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward", tint = if (uiCanForward) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.Gray)
-        }
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .border(2.dp, androidx.compose.ui.graphics.Color(0xFF6750A4), RoundedCornerShape(6.dp))
-                .clickable { showTabs() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(uiTabCount.toString(), color = androidx.compose.ui.graphics.Color(0xFF6750A4), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-        }
-        IconButton(onClick = { showMenu() }) {
-            Icon(Icons.Default.MoreVert, "Menu", tint = androidx.compose.ui.graphics.Color(0xFF1C1B1F))
         }
     }
 }
@@ -434,229 +332,321 @@ fun QuickLink(
         )
     }
 }
-override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    handleIntent(intent)
-}
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BottomBar() {
+    var textFieldValue by remember { mutableStateOf(uiUrl) }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-private fun handleIntent(i: Intent?) {
-    if (i?.action == Intent.ACTION_VIEW) {
-        val u = i.dataString
-        if (!u.isNullOrEmpty()) newTab(u)
+    LaunchedEffect(uiUrl) {
+        if (textFieldValue != uiUrl && uiUrl != HOME && uiUrl != "about:blank") {
+            textFieldValue = uiUrl
+        }
     }
-}
 
-override fun onStop() {
-    super.onStop()
-    if (!skipSave) saveTabs()
-}
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .navigationBarsPadding()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        IconButton(onClick = { go(HOME) }) {
+            Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.onSurface)
+        }
 
-override fun onDestroy() {
-    try { geckoView.releaseSession() } catch (e: Exception) {}
-    for (t in tabs) {
-        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-        t.session = null
-    }
-    super.onDestroy()
-}
-
-@Deprecated("Deprecated in Java")
-@Suppress("DEPRECATION")
-override fun onBackPressed() {
-    if (fullscreen) {
-        curTab()?.session?.exitFullScreen()
-        return
-    }
-    val t = curTab()
-    if (t != null && t.canBack) {
-        t.session?.goBack(true)
-        return
-    }
-    if (tabs.size > 1) {
-        closeTab(current)
-        return
-    }
-    val now = SystemClock.uptimeMillis()
-    if (now - lastBack < 2000) {
-        exitApp()
-    } else {
-        lastBack = now
-        toast("Press back again to exit")
-    }
-}
-
-@Deprecated("Deprecated in Java")
-@Suppress("DEPRECATION")
-override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-    super.onActivityResult(requestCode, resultCode, data)
-    if (requestCode == REQ_FILE) {
-        prompts.onFileResult(resultCode, data)
-    } else if (requestCode == REQ_XPI) {
-        val uri = data?.data
-        if (resultCode == RESULT_OK && uri != null) {
-            Thread {
-                try {
-                    val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
-                    contentResolver.openInputStream(uri)!!.use { i ->
-                        f.outputStream().use { o -> i.copyTo(o) }
-                    }
-                    runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
-                } catch (e: Exception) {
-                    toast("Could not read that file")
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (textFieldValue.startsWith("https://") || textFieldValue == HOME) {
+                    Icon(Icons.Default.Lock, "Secure", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Icon(Icons.Default.Search, "Search", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }.start()
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                BasicTextField(
+                    value = if (textFieldValue == HOME || textFieldValue == "about:blank") "" else textFieldValue,
+                    onValueChange = { textFieldValue = it },
+                    modifier = Modifier.weight(1f),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = ImeAction.Go,
+                        keyboardType = KeyboardType.Uri
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onGo = {
+                            go(textFieldValue)
+                            keyboardController?.hide()
+                        }
+                    ),
+                    decorationBox = { innerTextField ->
+                        if (textFieldValue.isEmpty() || textFieldValue == HOME || textFieldValue == "about:blank") {
+                            Text(
+                                text = "Search or enter address",
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                .clickable { showTabs() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(uiTabCount.toString(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+
+        IconButton(onClick = { showMenu() }) {
+            Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
-
-private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-
-private fun updateButtons() {
-    val t = curTab()
-    runOnUiThread {
-        uiTabCount = tabs.size
-        uiCanBack = t?.canBack == true
-        uiCanForward = t?.canForward == true
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
     }
-}
 
-private fun hideKeyboard() {
-    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    imm.hideSoftInputFromWindow(geckoView.windowToken, 0)
-}
+    private fun handleIntent(i: Intent?) {
+        if (i?.action == Intent.ACTION_VIEW) {
+            val u = i.dataString
+            if (!u.isNullOrEmpty()) newTab(u)
+        }
+    }
 
-private fun setFullscreen(on: Boolean) {
-    runOnUiThread {
-        fullscreen = on
-        uiIsFullscreen = on
-        val c = window.insetsController
-        if (c != null) {
-            if (on) {
-                c.hide(WindowInsets.Type.systemBars())
-                c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            } else {
-                c.show(WindowInsets.Type.systemBars())
+    override fun onStop() {
+        super.onStop()
+        if (!skipSave) saveTabs()
+    }
+
+    override fun onDestroy() {
+        try { geckoView.releaseSession() } catch (e: Exception) {}
+        for (t in tabs) {
+            try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+            t.session = null
+        }
+        super.onDestroy()
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (fullscreen) {
+            curTab()?.session?.exitFullScreen()
+            return
+        }
+        val t = curTab()
+        if (t != null && t.canBack) {
+            t.session?.goBack(true)
+            return
+        }
+        if (tabs.size > 1) {
+            closeTab(current)
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastBack < 2000) {
+            exitApp()
+        } else {
+            lastBack = now
+            toast("Press back again to exit")
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_FILE) {
+            prompts.onFileResult(resultCode, data)
+        } else if (requestCode == REQ_XPI) {
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) {
+                Thread {
+                    try {
+                        val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
+                        contentResolver.openInputStream(uri)!!.use { i ->
+                            f.outputStream().use { o -> i.copyTo(o) }
+                        }
+                        runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
+                    } catch (e: Exception) {
+                        toast("Could not read that file")
+                    }
+                }.start()
             }
         }
     }
-}
 
-private fun curTab(): Tab? = tabs.getOrNull(current)
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
 
-private fun toUrl(input: String): String {
-    val t = input.trim()
-    if (t.isEmpty() || t == HOME) return HOME
-    val lower = t.lowercase()
-    if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
-        lower.startsWith("file:") || lower.startsWith("moz-extension:")
-    ) return t
-    if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
-    if (!t.contains(' ') && t.contains('.')) return "https://$t"
-    return store.searchUrl() + Uri.encode(t)
-}
-
-private fun go(text: String) {
-    val url = toUrl(text)
-    val t = curTab()
-    if (t == null) newTab(url) else {
-        t.url = url
-        t.session?.loadUri(url)
+    private fun updateButtons() {
+        val t = curTab()
+        runOnUiThread {
+            uiTabCount = tabs.size
+            uiCanBack = t?.canBack == true
+            uiCanForward = t?.canForward == true
+        }
     }
-    hideKeyboard()
-    geckoView.requestFocus()
-}
 
-private fun newTab(url: String, select: Boolean = true): Tab {
-    val t = Tab(url)
-    tabs.add(t)
-    if (select) selectTab(tabs.size - 1) else updateButtons()
-    return t
-}
-
-private fun ensureSession(t: Tab): GeckoSession {
-    t.session?.let { return it }
-    val s = GeckoSession()
-    val d = TabDelegates(t)
-    s.contentDelegate = d
-    s.progressDelegate = d
-    s.navigationDelegate = d
-    s.promptDelegate = prompts
-    s.open(rt)
-    t.session = s
-    if (t.url.isNotEmpty() && t.url != HOME) s.loadUri(t.url)
-    return s
-}
-
-private fun selectTab(i: Int) {
-    if (i !in tabs.indices) return
-    tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
-    current = i
-    val t = tabs[i]
-    val s = ensureSession(t)
-    geckoView.releaseSession()
-    geckoView.setSession(s)
-    s.setActive(true)
-    runOnUiThread { uiUrl = t.url }
-    uiProgress = 0
-    uiIsLoading = false
-    updateButtons()
-}
-
-private fun closeTab(i: Int) {
-    if (i !in tabs.indices) return
-    val t = tabs[i]
-    val wasCurrent = (i == current)
-    if (wasCurrent) geckoView.releaseSession()
-    t.session?.let { if (it.isOpen) it.close() }
-    t.session = null
-    tabs.removeAt(i)
-    if (tabs.isEmpty()) {
-        current = -1
-        newTab(HOME)
-        return
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(geckoView.windowToken, 0)
     }
-    if (wasCurrent) {
-        current = -1
-        selectTab(minOf(i, tabs.size - 1))
-    } else {
-        if (i < current) current--
+
+    private fun setFullscreen(on: Boolean) {
+        runOnUiThread {
+            fullscreen = on
+            uiIsFullscreen = on
+            val c = window.insetsController
+            if (c != null) {
+                if (on) {
+                    c.hide(WindowInsets.Type.systemBars())
+                    c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                } else {
+                    c.show(WindowInsets.Type.systemBars())
+                }
+            }
+        }
+    }
+
+    private fun curTab(): Tab? = tabs.getOrNull(current)
+
+    private fun toUrl(input: String): String {
+        val t = input.trim()
+        if (t.isEmpty() || t == HOME) return HOME
+        val lower = t.lowercase()
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
+            lower.startsWith("file:") || lower.startsWith("moz-extension:")
+        ) return t
+        if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
+        if (!t.contains(' ') && t.contains('.')) return "https://$t"
+        return store.searchUrl() + Uri.encode(t)
+    }
+
+    private fun go(text: String) {
+        val url = toUrl(text)
+        val t = curTab()
+        if (t == null) newTab(url) else {
+            t.url = url
+            t.session?.loadUri(url)
+        }
+        hideKeyboard()
+        geckoView.requestFocus()
+    }
+
+    private fun newTab(url: String, select: Boolean = true): Tab {
+        val t = Tab(url)
+        tabs.add(t)
+        if (select) selectTab(tabs.size - 1) else updateButtons()
+        return t
+    }
+
+    private fun ensureSession(t: Tab): GeckoSession {
+        t.session?.let { return it }
+        val s = GeckoSession()
+        val d = TabDelegates(t)
+        s.contentDelegate = d
+        s.progressDelegate = d
+        s.navigationDelegate = d
+        s.promptDelegate = prompts
+        s.open(rt)
+        t.session = s
+        if (t.url.isNotEmpty() && t.url != HOME) s.loadUri(t.url)
+        return s
+    }
+
+    private fun selectTab(i: Int) {
+        if (i !in tabs.indices) return
+        tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
+        current = i
+        val t = tabs[i]
+        val s = ensureSession(t)
+        geckoView.releaseSession()
+        geckoView.setSession(s)
+        s.setActive(true)
+        runOnUiThread { uiUrl = t.url }
+        uiProgress = 0
+        uiIsLoading = false
         updateButtons()
     }
-}
 
-private fun closeAllTabs() {
-    geckoView.releaseSession()
-    for (t in tabs) {
+    private fun closeTab(i: Int) {
+        if (i !in tabs.indices) return
+        val t = tabs[i]
+        val wasCurrent = (i == current)
+        if (wasCurrent) geckoView.releaseSession()
         t.session?.let { if (it.isOpen) it.close() }
         t.session = null
+        tabs.removeAt(i)
+        if (tabs.isEmpty()) {
+            current = -1
+            newTab(HOME)
+            return
+        }
+        if (wasCurrent) {
+            current = -1
+            selectTab(minOf(i, tabs.size - 1))
+        } else {
+            if (i < current) current--
+            updateButtons()
+        }
     }
-    tabs.clear()
-    current = -1
-}
 
-private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
-
-private fun restoreTabs() {
-    val (saved, cur) = store.loadTabs()
-    // Force clear old tabs if it's just the DuckDuckGo page
-    if (saved.isEmpty() || (saved.size == 1 && saved[0].first == "https://duckduckgo.com")) {
-        store.clearTabs()
-        newTab(HOME)
-        return
+    private fun closeAllTabs() {
+        geckoView.releaseSession()
+        for (t in tabs) {
+            t.session?.let { if (it.isOpen) it.close() }
+            t.session = null
+        }
+        tabs.clear()
+        current = -1
     }
-    for ((u, t) in saved) tabs.add(Tab(u, t))
-    selectTab(cur.coerceIn(0, tabs.size - 1))
-}
 
-private fun recover(t: Tab) {
-    runOnUiThread {
-        val wasCurrent = tabs.indexOf(t) == current
-        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-        t.session = null
-        if (wasCurrent) selectTab(current)
+    private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
+
+    private fun restoreTabs() {
+        val (saved, cur) = store.loadTabs()
+        if (saved.isEmpty() || (saved.size == 1 && saved[0].first == "https://duckduckgo.com")) {
+            store.clearTabs()
+            newTab(HOME)
+            return
+        }
+        for ((u, t) in saved) tabs.add(Tab(u, t))
+        selectTab(cur.coerceIn(0, tabs.size - 1))
     }
-}
+
+    private fun recover(t: Tab) {
+        runOnUiThread {
+            val wasCurrent = tabs.indexOf(t) == current
+            try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+            t.session = null
+            if (wasCurrent) selectTab(current)
+        }
+    }
+
     inner class TabDelegates(private val tab: Tab) :
         GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
 
@@ -714,7 +704,6 @@ private fun recover(t: Tab) {
         override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
             tab.url = url ?: ""
             if (isCurrent()) {
-                // Keep UI on Home if Gecko loads about:blank internally
                 if (tab.url == "about:blank" && uiUrl == HOME) {
                     uiUrl = HOME
                 } else {
@@ -940,7 +929,7 @@ private fun recover(t: Tab) {
         }
     }
 
-    private val addonPrompt = object : WebExtensionController.PromptDelegate {
+        private val addonPrompt = object : WebExtensionController.PromptDelegate {
         override fun onInstallPromptRequest(extension: WebExtension, permissions: Array<String>, origins: Array<String>, dataCollectionPermissions: Array<String>): GeckoResult<WebExtension.PermissionPromptResponse>? {
             val res = GeckoResult<WebExtension.PermissionPromptResponse>()
             runOnUiThread {
