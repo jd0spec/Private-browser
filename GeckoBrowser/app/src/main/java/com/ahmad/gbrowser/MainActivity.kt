@@ -60,7 +60,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -103,11 +102,10 @@ class MainActivity : ComponentActivity() {
     }
 
     class Tab(var url: String, var title: String = "") {
-        val id: String = UUID.randomUUID().toString() // FIX: Unique ID prevents swipe glitch
+        val id: String = UUID.randomUUID().toString()
         var session: GeckoSession? = null
         var canBack = false
         var canForward = false
-        var bitmap: Bitmap? = null // NEW: Holds the live page preview
     }
 
     data class Shortcut(
@@ -266,7 +264,6 @@ fun BrowserScreen() {
         }
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomePage(onSearch: (String) -> Unit) {
@@ -575,7 +572,7 @@ fun ContextMenuSheet() {
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy text") { showContextMenu = false; copyText(txt) }
             }
             contextImg?.let { img ->
-                MenuItem(icon = Icons.Default.Image, text = "Open image in new tab") { showContextMenu = false; newTab(img) }
+                MenuItem(icon = Icons.Default.Photo, text = "Open image in new tab") { showContextMenu = false; newTab(img) }
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy image link") { showContextMenu = false; copyText(img) }
             }
         }
@@ -664,13 +661,11 @@ fun TabManagerSheet() {
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    // FIX: key = { it.id } prevents the grid from glitching when swiping
                     items(tabs, key = { it.id }) { tab ->
                         
                         var showDeleteConfirm by remember { mutableStateOf(false) }
                         val index = tabs.indexOf(tab)
                         
-                        // FIX: Swipe logic
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
                                 if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
@@ -729,18 +724,9 @@ fun TabManagerSheet() {
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     
-                                    // FIX: Show actual webpage screenshot
                                     Box(modifier = Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
-                                        if (tab.bitmap != null) {
-                                            Image(
-                                                bitmap = tab.bitmap!!.asImageBitmap(),
-                                                contentDescription = "Preview",
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Text("Loading...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
+                                        // GeckoView 150 removed direct capture, so we just show a placeholder text
+                                        Text(tab.url, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -775,7 +761,6 @@ override fun onDestroy() {
     for (t in tabs) { 
         try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {} 
         t.session = null
-        t.bitmap?.recycle() // FIX: Recycle memory
     }
     super.onDestroy()
 }
@@ -883,7 +868,7 @@ private fun closeTab(i: Int) {
     if (i !in tabs.indices) return
     val t = tabs[i]; val wasCurrent = (i == current)
     if (wasCurrent) geckoView.releaseSession()
-    t.session?.let { if (it.isOpen) it.close() }; t.session = null; t.bitmap?.recycle(); tabs.removeAt(i)
+    t.session?.let { if (it.isOpen) it.close() }; t.session = null; tabs.removeAt(i)
     
     if (tabs.isEmpty()) { current = -1; newTab(HOME); return }
     if (wasCurrent) { current = -1; selectTab(minOf(i, tabs.size - 1)) } else { if (i < current) current--; updateButtons() }
@@ -891,7 +876,7 @@ private fun closeTab(i: Int) {
 
 private fun closeAllTabs() {
     geckoView.releaseSession()
-    for (t in tabs) { t.session?.let { if (it.isOpen) it.close() }; t.session = null; t.bitmap?.recycle() }
+    for (t in tabs) { t.session?.let { if (it.isOpen) it.close() }; t.session = null }
     tabs.clear(); current = -1
 }
 
@@ -946,14 +931,6 @@ private fun recover(t: Tab) {
             if (isCurrent()) runOnUiThread { uiIsLoading = false }
             if (success && tab.url.startsWith("http")) { 
                 store.addVisit(tab.url, tab.title) 
-                
-                // FIX: Capture screenshot for tab manager
-                session.capture().accept({ bitmap ->
-                    tab.bitmap = bitmap
-                    runOnUiThread { uiTabCount = tabs.size } // Triggers recompose to show the new image
-                }, { error -> 
-                    // Ignore errors
-                })
             }
         }
 
