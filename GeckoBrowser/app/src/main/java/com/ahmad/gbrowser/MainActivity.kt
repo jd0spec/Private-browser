@@ -447,7 +447,7 @@ fun FolderView(folder: Shortcut, onDismiss: () -> Unit, onOpenLink: (String) -> 
         }
     }
 }
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderIcon(shortcut: Shortcut, onClick: () -> Unit, onLongClick: () -> Unit) {
     Column(
