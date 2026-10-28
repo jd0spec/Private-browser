@@ -22,7 +22,6 @@ import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -40,6 +39,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -575,6 +575,7 @@ fun ContextMenuSheet() {
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy text") { showContextMenu = false; copyText(txt) }
             }
             contextImg?.let { img ->
+                // FIXED: Changed Icons.Default.Image to Icons.Default.Photo
                 MenuItem(icon = Icons.Default.Photo, text = "Open image in new tab") { showContextMenu = false; newTab(img) }
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy image link") { showContextMenu = false; copyText(img) }
             }
@@ -739,7 +740,7 @@ fun TabManagerSheet() {
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     
-                                    // LIVE PREVIEW CAPTURED VIA PIXELCOPY
+                                    // LIVE PREVIEW CAPTURED VIA GECKOVIEW API
                                     Box(modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                                         if (tab.bitmap != null) {
                                             Image(
@@ -970,23 +971,19 @@ private fun recover(t: Tab) {
             if (success && tab.url.startsWith("http")) { 
                 store.addVisit(tab.url, tab.title) 
                 
-                // THE HOLY GRAIL: CAPTURE TAB PREVIEW USING PIXELCOPY
+                // THE OFFICIAL GECKOVIEW SCREENSHOT API
                 runOnUiThread {
                     try {
-                        if (geckoView.width > 0 && geckoView.height > 0) {
-                            val bitmap = Bitmap.createBitmap(geckoView.width, geckoView.height, Bitmap.Config.ARGB_8888)
-                            val window = geckoView.window
-                            if (window != null) {
-                                PixelCopy.request(window, geckoView, bitmap, { copyResult ->
-                                    if (copyResult == PixelCopy.SUCCESS) {
-                                        // Scale down the bitmap to save memory
-                                        val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
-                                        tab.bitmap = scaled
-                                        uiTabCount = tabs.size // Triggers UI refresh
-                                    }
-                                }, Handler(Looper.getMainLooper()))
+                        geckoView.capturePixels().accept({ bitmap ->
+                            if (bitmap != null) {
+                                // Scale down the bitmap to save memory for the tab grid
+                                val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
+                                tab.bitmap = scaled
+                                runOnUiThread { uiTabCount = tabs.size } // Triggers UI refresh
                             }
-                        }
+                        }, { error ->
+                            // Ignore capture errors quietly
+                        })
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
