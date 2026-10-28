@@ -44,6 +44,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -62,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -478,6 +480,7 @@ fun FolderItemPreview(item: Shortcut?, modifier: Modifier = Modifier) {
 fun BottomBar() {
     var textFieldValue by remember { mutableStateOf(uiUrl) }
     val keyboardController = LocalSoftwareKeyboardController.current
+    var totalDragX by remember { mutableStateOf(0f) }
 
     LaunchedEffect(uiUrl) { if (textFieldValue != uiUrl && uiUrl != HOME && uiUrl != "about:blank") textFieldValue = uiUrl }
 
@@ -490,7 +493,37 @@ fun BottomBar() {
             Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.onSurface)
         }
 
-        Surface(modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        // ADDRESS BAR WITH SWIPE GESTURES
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDragX = 0f },
+                        onDragEnd = {
+                            val threshold = 150f
+                            if (totalDragX > threshold) {
+                                // RIGHT SWIPE (Previous Tab)
+                                if (current > 0) selectTab(current - 1)
+                            } else if (totalDragX < -threshold) {
+                                // LEFT SWIPE (Next Tab or New Tab)
+                                if (current == tabs.size - 1) {
+                                    newTab(HOME)
+                                } else if (current < tabs.size - 1) {
+                                    selectTab(current + 1)
+                                }
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume() // Consume drag so text cursor doesn't move
+                            totalDragX += dragAmount
+                        }
+                    )
+                },
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
             Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (textFieldValue.startsWith("https://") || textFieldValue == HOME) {
                     Icon(Icons.Default.Lock, "Secure", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -575,7 +608,6 @@ fun ContextMenuSheet() {
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy text") { showContextMenu = false; copyText(txt) }
             }
             contextImg?.let { img ->
-                // FIXED: Changed Icons.Default.Image to Icons.Default.Photo
                 MenuItem(icon = Icons.Default.Photo, text = "Open image in new tab") { showContextMenu = false; newTab(img) }
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy image link") { showContextMenu = false; copyText(img) }
             }
@@ -976,14 +1008,11 @@ private fun recover(t: Tab) {
                     try {
                         geckoView.capturePixels().accept({ bitmap ->
                             if (bitmap != null) {
-                                // Scale down the bitmap to save memory for the tab grid
                                 val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
                                 tab.bitmap = scaled
-                                runOnUiThread { uiTabCount = tabs.size } // Triggers UI refresh
+                                runOnUiThread { uiTabCount = tabs.size } 
                             }
-                        }, { error ->
-                            // Ignore capture errors quietly
-                        })
+                        }, { error -> })
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
