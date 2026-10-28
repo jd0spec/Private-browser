@@ -100,7 +100,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var store: Store
     private lateinit var rt: GeckoRuntime
     private lateinit var geckoView: GeckoView
-    private lateinit var downloadManager: ClintDownloadManager
 
     private var uiUrl by mutableStateOf("")
     private var uiProgress by mutableStateOf(0)
@@ -184,7 +183,8 @@ fun BrowserScreen() {
         bottomBar = { if (!uiIsFullscreen) BottomBar() }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            if (uiUrl == "browser://home" || uiUrl.isEmpty()) {
+            // If URL is HOME or about:blank, show the Compose Homepage
+            if (uiUrl == HOME || uiUrl == "about:blank" || uiUrl.isEmpty()) {
                 HomePage { searchQuery ->
                     go(searchQuery)
                 }
@@ -205,7 +205,7 @@ fun TopBar() {
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(uiUrl) { 
-        if (textFieldValue != uiUrl && uiUrl != "browser://home") textFieldValue = uiUrl 
+        if (textFieldValue != uiUrl && uiUrl != HOME) textFieldValue = uiUrl 
     }
 
     Column {
@@ -228,7 +228,7 @@ fun TopBar() {
                     contentAlignment = Alignment.CenterStart
                 ) {
                     BasicTextField(
-                        value = if (textFieldValue == "browser://home") "" else textFieldValue,
+                        value = if (textFieldValue == HOME || textFieldValue == "about:blank") "" else textFieldValue,
                         onValueChange = { textFieldValue = it },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -249,7 +249,7 @@ fun TopBar() {
                             }
                         ),
                         decorationBox = { innerTextField ->
-                            if (textFieldValue.isEmpty() || textFieldValue == "browser://home") {
+                            if (textFieldValue.isEmpty() || textFieldValue == HOME || textFieldValue == "about:blank") {
                                 Text(
                                     text = "Search or enter address",
                                     fontSize = 15.sp,
@@ -526,11 +526,6 @@ private fun hideKeyboard() {
     imm.hideSoftInputFromWindow(geckoView.windowToken, 0)
 }
 
-private fun display(u: String): String {
-    if (u == "browser://home" || u == "about:blank") return ""
-    return u.removePrefix("https://").removePrefix("http://").removeSuffix("/")
-}
-
 private fun setFullscreen(on: Boolean) {
     runOnUiThread {
         fullscreen = on
@@ -551,7 +546,7 @@ private fun curTab(): Tab? = tabs.getOrNull(current)
 
 private fun toUrl(input: String): String {
     val t = input.trim()
-    if (t.isEmpty() || t == "browser://home") return HOME
+    if (t.isEmpty() || t == HOME) return HOME
     val lower = t.lowercase()
     if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
         lower.startsWith("file:") || lower.startsWith("moz-extension:")
@@ -607,59 +602,61 @@ private fun selectTab(i: Int) {
     uiIsLoading = false
     updateButtons()
 }
-    private fun closeTab(i: Int) {
-        if (i !in tabs.indices) return
-        val t = tabs[i]
-        val wasCurrent = (i == current)
-        if (wasCurrent) geckoView.releaseSession()
+
+private fun closeTab(i: Int) {
+    if (i !in tabs.indices) return
+    val t = tabs[i]
+    val wasCurrent = (i == current)
+    if (wasCurrent) geckoView.releaseSession()
+    t.session?.let { if (it.isOpen) it.close() }
+    t.session = null
+    tabs.removeAt(i)
+    if (tabs.isEmpty()) {
+        current = -1
+        newTab(HOME)
+        return
+    }
+    if (wasCurrent) {
+        current = -1
+        selectTab(minOf(i, tabs.size - 1))
+    } else {
+        if (i < current) current--
+        updateButtons()
+    }
+}
+
+private fun closeAllTabs() {
+    geckoView.releaseSession()
+    for (t in tabs) {
         t.session?.let { if (it.isOpen) it.close() }
         t.session = null
-        tabs.removeAt(i)
-        if (tabs.isEmpty()) {
-            current = -1
-            newTab(HOME)
-            return
-        }
-        if (wasCurrent) {
-            current = -1
-            selectTab(minOf(i, tabs.size - 1))
-        } else {
-            if (i < current) current--
-            updateButtons()
-        }
     }
+    tabs.clear()
+    current = -1
+}
 
-    private fun closeAllTabs() {
-        geckoView.releaseSession()
-        for (t in tabs) {
-            t.session?.let { if (it.isOpen) it.close() }
-            t.session = null
-        }
-        tabs.clear()
-        current = -1
+private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
+
+private fun restoreTabs() {
+    val (saved, cur) = store.loadTabs()
+    // Force clear old tabs if it's just the DuckDuckGo page
+    if (saved.isEmpty() || (saved.size == 1 && saved[0].first == "https://duckduckgo.com")) {
+        store.clearTabs()
+        newTab(HOME)
+        return
     }
+    for ((u, t) in saved) tabs.add(Tab(u, t))
+    selectTab(cur.coerceIn(0, tabs.size - 1))
+}
 
-    private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
-
-    private fun restoreTabs() {
-        val (saved, cur) = store.loadTabs()
-        if (saved.isEmpty()) {
-            newTab(HOME)
-            return
-        }
-        for ((u, t) in saved) tabs.add(Tab(u, t))
-        selectTab(cur.coerceIn(0, tabs.size - 1))
+private fun recover(t: Tab) {
+    runOnUiThread {
+        val wasCurrent = tabs.indexOf(t) == current
+        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+        t.session = null
+        if (wasCurrent) selectTab(current)
     }
-
-    private fun recover(t: Tab) {
-        runOnUiThread {
-            val wasCurrent = tabs.indexOf(t) == current
-            try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-            t.session = null
-            if (wasCurrent) selectTab(current)
-        }
-    }
-
+}
     inner class TabDelegates(private val tab: Tab) :
         GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
 
@@ -711,13 +708,19 @@ private fun selectTab(i: Int) {
             if (isCurrent()) runOnUiThread { uiIsLoading = false }
             if (success && tab.url.startsWith("http")) {
                 store.addVisit(tab.url, tab.title)
-                // injectPlayerSkin(session)
             }
         }
 
         override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
             tab.url = url ?: ""
-            if (isCurrent()) runOnUiThread { uiUrl = tab.url }
+            if (isCurrent()) {
+                // Keep UI on Home if Gecko loads about:blank internally
+                if (tab.url == "about:blank" && uiUrl == HOME) {
+                    uiUrl = HOME
+                } else {
+                    runOnUiThread { uiUrl = tab.url }
+                }
+            }
         }
 
         override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
@@ -751,7 +754,7 @@ private fun selectTab(i: Int) {
                 return GeckoResult.fromValue(AllowOrDeny.DENY)
             }
 
-            if (u == "browser://home") return GeckoResult.fromValue(AllowOrDeny.DENY)
+            if (u == HOME) return GeckoResult.fromValue(AllowOrDeny.DENY)
 
             val scheme = u.substringBefore(':', "").lowercase()
             if (scheme.isEmpty() || scheme in okSchemes) return null
