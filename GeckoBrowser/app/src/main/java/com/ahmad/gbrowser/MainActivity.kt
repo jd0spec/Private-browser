@@ -37,6 +37,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -70,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -132,6 +135,7 @@ class MainActivity : ComponentActivity() {
     private var uiIsLoading by mutableStateOf(false)
     private var uiTabCount by mutableStateOf(1)
     private var uiIsFullscreen by mutableStateOf(false)
+    private var swipeDirection by mutableStateOf(0) // For animations
     
     private var showMainMenu by mutableStateOf(false)
     private var showContextMenu by mutableStateOf(false)
@@ -246,7 +250,7 @@ fun BrowserScreen() {
     Scaffold(
         bottomBar = { if (!uiIsFullscreen) BottomBar() }
     ) { paddingValues ->
-        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize().clip(RoundedCornerShape(0.dp))) {
             
             if (uiIsLoading) {
                 LinearProgressIndicator(
@@ -256,15 +260,37 @@ fun BrowserScreen() {
                 )
             }
 
-            if (uiUrl == HOME || uiUrl == "about:blank" || uiUrl.isEmpty()) {
-                HomePage { searchQuery ->
-                    go(searchQuery)
+            // Animated Content for Swipe Gestures
+            AnimatedContent(
+                targetState = current,
+                transitionSpec = {
+                    if (swipeDirection > 0) {
+                        // Swiping Left (Next Tab)
+                        (slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(250)) + fadeIn()).togetherWith(
+                            slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(250)) + fadeOut()
+                        )
+                    } else if (swipeDirection < 0) {
+                        // Swiping Right (Previous Tab)
+                        (slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(250)) + fadeIn()).togetherWith(
+                            slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(250)) + fadeOut()
+                        )
+                    } else {
+                        fadeIn() togetherWith fadeOut()
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                label = "TabSwitch"
+            ) { targetTabIndex ->
+                if (uiUrl == HOME || uiUrl == "about:blank" || uiUrl.isEmpty()) {
+                    HomePage { searchQuery ->
+                        go(searchQuery)
+                    }
+                } else {
+                    AndroidView(
+                        factory = { geckoView },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-            } else {
-                AndroidView(
-                    factory = { geckoView },
-                    modifier = Modifier.fillMaxSize()
-                )
             }
         }
     }
@@ -505,18 +531,23 @@ fun BottomBar() {
                             val threshold = 150f
                             if (totalDragX > threshold) {
                                 // RIGHT SWIPE (Previous Tab)
-                                if (current > 0) selectTab(current - 1)
+                                if (current > 0) {
+                                    swipeDirection = -1
+                                    selectTab(current - 1)
+                                }
                             } else if (totalDragX < -threshold) {
                                 // LEFT SWIPE (Next Tab or New Tab)
                                 if (current == tabs.size - 1) {
+                                    swipeDirection = 1
                                     newTab(HOME)
                                 } else if (current < tabs.size - 1) {
+                                    swipeDirection = 1
                                     selectTab(current + 1)
                                 }
                             }
                         },
                         onHorizontalDrag = { change, dragAmount ->
-                            change.consume() // Consume drag so text cursor doesn't move
+                            change.consume() // This stops the URL text field from scrolling
                             totalDragX += dragAmount
                         }
                     )
@@ -549,8 +580,9 @@ fun BottomBar() {
             }
         }
 
-        Box(modifier = Modifier.size(40.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)).clickable { showTabManager = true }, contentAlignment = Alignment.Center) {
-            Text(uiTabCount.toString(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        // SMALLER TAB COUNTER (Syncs with Current Tab)
+        Box(modifier = Modifier.size(28.dp).border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)).clickable { showTabManager = true }, contentAlignment = Alignment.Center) {
+            Text((current + 1).coerceAtLeast(1).toString(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
 
         IconButton(onClick = { showMainMenu = true }) {
@@ -753,6 +785,7 @@ fun TabManagerSheet() {
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 border = BorderStroke(if (index == current) 2.dp else 1.dp, if (index == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
                                 modifier = Modifier.height(160.dp).clickable {
+                                    swipeDirection = 0
                                     selectTab(index)
                                     showTabManager = false
                                 }
@@ -806,7 +839,7 @@ fun TabManagerSheet() {
             }
             
             FloatingActionButton(
-                onClick = { showTabManager = false; newTab(HOME) },
+                onClick = { showTabManager = false; swipeDirection = 0; newTab(HOME) },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
@@ -876,7 +909,7 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
 
 private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-private fun updateButtons() { runOnUiThread { uiTabCount = tabs.size } }
+private fun updateButtons() { runOnUiThread { uiTabCount = (current + 1).coerceAtLeast(1) } }
 private fun hideKeyboard() { val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager; imm.hideSoftInputFromWindow(geckoView.windowToken, 0) }
 
 private fun setFullscreen(on: Boolean) {
@@ -932,7 +965,7 @@ private fun selectTab(i: Int) {
     tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
     current = i; val t = tabs[i]; val s = ensureSession(t)
     geckoView.releaseSession(); geckoView.setSession(s); s.setActive(true)
-    runOnUiThread { uiUrl = t.url }; uiProgress = 0; uiIsLoading = false; updateButtons()
+    runOnUiThread { uiUrl = t.url; uiTabCount = current + 1 }; uiProgress = 0; uiIsLoading = false; updateButtons()
 }
 
 private fun closeTab(i: Int) {
