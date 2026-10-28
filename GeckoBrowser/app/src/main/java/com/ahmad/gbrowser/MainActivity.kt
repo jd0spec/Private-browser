@@ -70,8 +70,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -108,7 +109,8 @@ class MainActivity : ComponentActivity() {
         val id: String,
         val name: String,
         val url: String = "",
-        val items: List<Shortcut> = emptyList()
+        val items: List<Shortcut> = emptyList(),
+        val iconUrl: String? = null
     ) {
         val isFolder: Boolean get() = items.isNotEmpty()
     }
@@ -265,6 +267,7 @@ fun BrowserScreen() {
 fun HomePage(onSearch: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val coroutineScope = rememberCoroutineScope()
 
     var shortcuts by remember { mutableStateOf(listOf(
         Shortcut("1", "Web", "https://duckduckgo.com"),
@@ -331,7 +334,7 @@ fun HomePage(onSearch: (String) -> Unit) {
                 if (shortcut.isFolder) {
                     FolderIcon(shortcut = shortcut, onClick = { openFolder = shortcut }, onLongClick = { editingShortcut = shortcut })
                 } else {
-                    QuickLink(name = shortcut.name, url = shortcut.url, onClick = { onSearch(shortcut.url) }, onLongClick = { editingShortcut = shortcut })
+                    QuickLink(name = shortcut.name, url = shortcut.url, iconUrl = shortcut.iconUrl, onClick = { onSearch(shortcut.url) }, onLongClick = { editingShortcut = shortcut })
                 }
             }
             
@@ -370,9 +373,16 @@ fun HomePage(onSearch: (String) -> Unit) {
                 TextButton(onClick = {
                     if (nameState.isNotBlank() && (isFolder || urlState.isNotBlank())) {
                         if (editingShortcut == null) {
-                            shortcuts = shortcuts + Shortcut(System.currentTimeMillis().toString(), nameState, urlState)
+                            coroutineScope.launch {
+                                val fetchedIcon = fetchSiteIcon(urlState)
+                                shortcuts = shortcuts + Shortcut(System.currentTimeMillis().toString(), nameState, urlState, iconUrl = fetchedIcon)
+                            }
                         } else {
-                            shortcuts = shortcuts.map { if (it.id == editingShortcut?.id) { if (isFolder) it.copy(name = nameState) else it.copy(name = nameState, url = urlState) } else it }
+                            shortcuts = shortcuts.map { 
+                                if (it.id == editingShortcut?.id) {
+                                    if (isFolder) it.copy(name = nameState) else it.copy(name = nameState, url = urlState)
+                                } else it 
+                            }
                         }
                     }
                     showAddDialog = false; editingShortcut = null
@@ -391,17 +401,47 @@ fun HomePage(onSearch: (String) -> Unit) {
     }
 }
 
+suspend fun fetchSiteIcon(url: String): String? = withContext(Dispatchers.IO) {
+    try {
+        val formattedUrl = if (!url.startsWith("http")) "https://$url" else url
+        val client = okhttp3.OkHttpClient()
+        val request = okhttp3.Request.Builder().url(formattedUrl).build()
+        val response = client.newCall(request).execute()
+        val html = response.body?.string() ?: return@withContext null
+        
+        val regex = Regex("""<link[^>]+rel=["'](?:apple-touch-icon|icon|shortcut icon)["'][^>]+href=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val match = regex.find(html)
+        
+        if (match != null) {
+            val href = match.groupValues[1]
+            if (href.startsWith("http")) return@withContext href
+            if (href.startsWith("//")) return@withContext "https:$href"
+            val baseUrl = java.net.URL(formattedUrl)
+            return@withContext java.net.URL(baseUrl, href).toString()
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return@withContext null
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QuickLink(name: String, url: String, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun QuickLink(name: String, url: String, iconUrl: String?, onClick: () -> Unit, onLongClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Surface(modifier = Modifier.size(56.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
             Box(contentAlignment = Alignment.Center) {
-                if (url.isNotBlank()) {
-                    // NEW: Load Website Favicon using Coil
+                if (iconUrl != null) {
+                    AsyncImage(
+                        model = iconUrl,
+                        contentDescription = name,
+                        modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else if (url.isNotBlank()) {
                     AsyncImage(
                         model = "https://www.google.com/s2/favicons?domain=${url}&sz=128",
                         contentDescription = name,
@@ -428,7 +468,7 @@ fun FolderDialog() {
                 Spacer(modifier = Modifier.height(24.dp))
                 LazyVerticalGrid(columns = GridCells.Fixed(4), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.heightIn(max = 400.dp)) {
                     items(folder.items) { subItem ->
-                        QuickLink(name = subItem.name, url = subItem.url, onClick = { openFolder = null; go(subItem.url) }, onLongClick = { })
+                        QuickLink(name = subItem.name, url = subItem.url, iconUrl = subItem.iconUrl, onClick = { openFolder = null; go(subItem.url) }, onLongClick = { })
                     }
                 }
             }
@@ -544,7 +584,27 @@ fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String
     }
 }
 
-// NEW: Full Screen Settings View
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContextMenuSheet() {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(onDismissRequest = { showContextMenu = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
+            contextLink?.let { link ->
+                MenuItem(icon = Icons.Default.OpenInNew, text = "Open link in new tab") { showContextMenu = false; newTab(link) }
+                MenuItem(icon = Icons.Default.ContentCopy, text = "Copy link") { showContextMenu = false; copyText(link) }
+            }
+            contextText?.let { txt ->
+                MenuItem(icon = Icons.Default.ContentCopy, text = "Copy text") { showContextMenu = false; copyText(txt) }
+            }
+            contextImg?.let { img ->
+                MenuItem(icon = Icons.Default.Image, text = "Open image in new tab") { showContextMenu = false; newTab(img) }
+                MenuItem(icon = Icons.Default.ContentCopy, text = "Copy image link") { showContextMenu = false; copyText(img) }
+            }
+        }
+    }
+}
+
 @Composable
 fun SettingsScreen() {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
@@ -608,8 +668,6 @@ fun SearchEngineDialog() {
 @Composable
 fun TabManagerSheet() {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     ModalBottomSheet(onDismissRequest = { showTabManager = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.background) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -652,7 +710,7 @@ fun TabManagerSheet() {
                             }
                         }
 
-                        // 3 Second Delete Confirmation Overlay
+                        // Countdown / Delete Confirmation Overlay
                         if (showDeleteConfirm) {
                             AlertDialog(
                                 onDismissRequest = { showDeleteConfirm = false },
@@ -680,8 +738,6 @@ fun TabManagerSheet() {
             ) {
                 Icon(Icons.Default.Add, "New Tab")
             }
-            
-            SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }
