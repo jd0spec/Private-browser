@@ -244,7 +244,8 @@ fun BrowserScreen() {
             }
         }
     }
-    @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+}
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomePage(onSearch: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
