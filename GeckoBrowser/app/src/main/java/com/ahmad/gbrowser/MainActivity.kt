@@ -36,6 +36,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -79,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -111,7 +113,6 @@ class MainActivity : ComponentActivity() {
         var canForward = false
     }
 
-    // NEW: Updated Shortcut class to support Folders
     data class Shortcut(
         val id: String,
         val name: String,
@@ -133,6 +134,11 @@ class MainActivity : ComponentActivity() {
     
     private var showMainMenu by mutableStateOf(false)
     private var showContextMenu by mutableStateOf(false)
+    
+    // New Dialog States
+    private var showAddonsDialog by mutableStateOf(false)
+    private var showSearchEngineDialog by mutableStateOf(false)
+
     private var contextLink by mutableStateOf<String?>(null)
     private var contextText by mutableStateOf<String?>(null)
     private var contextImg by mutableStateOf<String?>(null)
@@ -191,7 +197,8 @@ class MainActivity : ComponentActivity() {
                 surface = ComposeColor.Black,
                 surfaceVariant = ComposeColor(0xFF1E1E1E),
                 onSurface = ComposeColor(0xFFE6E1E5),
-                onSurfaceVariant = ComposeColor(0xFFCAC4D0)
+                onSurfaceVariant = ComposeColor(0xFFCAC4D0),
+                outline = ComposeColor(0xFF938F99)
             )
         } else {
             lightColorScheme(
@@ -201,7 +208,8 @@ class MainActivity : ComponentActivity() {
                 surface = ComposeColor(0xFFFFFBFE),
                 surfaceVariant = ComposeColor(0xFFE7E0EC),
                 onSurface = ComposeColor(0xFF1C1B1F),
-                onSurfaceVariant = ComposeColor(0xFF49454F)
+                onSurfaceVariant = ComposeColor(0xFF49454F),
+                outline = ComposeColor(0xFF79747E)
             )
         }
         
@@ -209,6 +217,8 @@ class MainActivity : ComponentActivity() {
             BrowserScreen()
             if (showMainMenu) MainMenuSheet()
             if (showContextMenu) ContextMenuSheet()
+            if (showAddonsDialog) AddonsDialog()
+            if (showSearchEngineDialog) SearchEngineDialog()
         }
     }
 
@@ -256,7 +266,6 @@ fun HomePage(onSearch: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Initialize with a sample folder!
     var shortcuts by remember { mutableStateOf(listOf(
         Shortcut("1", "Web", "https://duckduckgo.com"),
         Shortcut("2", "Video", "https://youtube.com"),
@@ -266,20 +275,38 @@ fun HomePage(onSearch: (String) -> Unit) {
         ))
     )) }
     
-    // State for folders and dialogs
     var openFolder by remember { mutableStateOf<Shortcut?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingShortcut by remember { mutableStateOf<Shortcut?>(null) }
 
-    // Folder Overlay View
+    // Render Folder as a Popup Dialog
     if (openFolder != null) {
-        FolderView(
-            folder = openFolder!!,
-            onDismiss = { openFolder = null },
-            onOpenLink = { onSearch(it) },
-            onEditItem = { editingShortcut = it }
-        )
-        return // Don't render home page behind it
+        Dialog(onDismissRequest = { openFolder = null }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.padding(16.dp).wrapContentSize()
+            ) {
+                Column(modifier = Modifier.padding(24.dp).widthIn(min = 200.dp, max = 350.dp)) {
+                    Text(openFolder!!.name, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    Spacer(modifier = Modifier.height(24.dp))
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.heightIn(max = 400.dp)
+                    ) {
+                        items(openFolder!!.items) { subItem ->
+                            QuickLink(
+                                name = subItem.name, 
+                                onClick = { onSearch(subItem.url); openFolder = null }, 
+                                onLongClick = { editingShortcut = subItem; openFolder = null }
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Column(
@@ -297,7 +324,6 @@ fun HomePage(onSearch: (String) -> Unit) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Search Pill
         Surface(
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(28.dp),
@@ -332,7 +358,6 @@ fun HomePage(onSearch: (String) -> Unit) {
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // Shortcut Grid
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -372,7 +397,6 @@ fun HomePage(onSearch: (String) -> Unit) {
         }
     }
 
-    // Add / Edit Dialog
     if (showAddDialog || editingShortcut != null) {
         var nameState by remember { mutableStateOf(editingShortcut?.name ?: "") }
         var urlState by remember { mutableStateOf(editingShortcut?.url ?: "") }
@@ -424,31 +448,6 @@ fun HomePage(onSearch: (String) -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FolderView(folder: Shortcut, onDismiss: () -> Unit, onOpenLink: (String) -> Unit, onEditItem: (Shortcut) -> Unit) {
-    Surface(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.95f))) {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(folder.name, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(folder.items) { subItem ->
-                    QuickLink(name = subItem.name, onClick = { onOpenLink(subItem.url) }, onLongClick = { onEditItem(subItem) })
-                }
-            }
-        }
-    }
-}
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
 fun FolderIcon(shortcut: Shortcut, onClick: () -> Unit, onLongClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -459,7 +458,6 @@ fun FolderIcon(shortcut: Shortcut, onClick: () -> Unit, onLongClick: () -> Unit)
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            // 2x2 Grid Preview
             Column(modifier = Modifier.fillMaxSize().padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)))
@@ -555,15 +553,33 @@ fun MainMenuSheet() {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
             MenuItem(icon = Icons.Default.Add, text = "New Tab") { showMainMenu = false; newTab(HOME) }
             MenuItem(icon = Icons.Default.History, text = "History") { showMainMenu = false; showHistory() }
-            MenuItem(icon = Icons.Default.SettingsSuggest, text = "Add-ons") { showMainMenu = false; showAddons() }
+            MenuItem(icon = Icons.Default.SettingsSuggest, text = "Add-ons") { showMainMenu = false; showAddonsDialog = true }
             MenuItem(icon = Icons.Default.Download, text = "Downloads") { showMainMenu = false; startActivity(Intent(this@MainActivity, DownloadsActivity::class.java)) }
+            
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            MenuItem(icon = Icons.Default.ClearAll, text = "Clear data now…") { showMainMenu = false; chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } } }
-            MenuItem(icon = Icons.Default.Delete, text = "Auto-clear on exit…") { showMainMenu = false; chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") } }
-            MenuItem(icon = Icons.Default.Search, text = "Search engine: " + store.engineNames[store.engineIndex()]) { showMainMenu = false; AlertDialog.Builder(this@MainActivity).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show() }
+            
+            MenuItem(icon = Icons.Default.ClearAll, text = "Clear data now…") { 
+                showMainMenu = false
+                chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } } 
+            }
+            MenuItem(icon = Icons.Default.Delete, text = "Auto-clear on exit…") { 
+                showMainMenu = false
+                chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") } 
+            }
+            MenuItem(icon = Icons.Default.Search, text = "Search engine: " + store.engineNames[store.engineIndex()]) { 
+                showMainMenu = false
+                showSearchEngineDialog = true
+            }
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            MenuItem(icon = Icons.Default.Settings, text = "Settings") { showMainMenu = false; toast("Settings coming soon!") }
-            MenuItem(icon = Icons.Default.Info, text = "Exit") { showMainMenu = false; exitApp() }
+
+            MenuItem(icon = Icons.Default.Settings, text = "Settings") { 
+                showMainMenu = false
+                toast("Settings coming soon!") 
+            }
+            MenuItem(icon = Icons.Default.Info, text = "Exit") { 
+                showMainMenu = false; exitApp() 
+            }
         }
     }
 }
@@ -593,6 +609,72 @@ fun ContextMenuSheet() {
             contextImg?.let { img ->
                 MenuItem(icon = Icons.Default.Image, text = "Open image in new tab") { showContextMenu = false; newTab(img) }
                 MenuItem(icon = Icons.Default.ContentCopy, text = "Copy image link") { showContextMenu = false; copyText(img) }
+            }
+        }
+    }
+}
+
+// --- NEW MODERN DIALOGS ---
+
+@Composable
+fun ModernPillButton(text: String, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onClick() }
+    ) {
+        Text(text, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp)
+    }
+}
+
+@Composable
+fun AddonsDialog() {
+    Dialog(onDismissRequest = { showAddonsDialog = false }) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier.padding(16.dp).wrapContentSize()
+        ) {
+            Column(modifier = Modifier.padding(24.dp).widthIn(min = 300.dp, max = 400.dp)) {
+                Text("Add-ons", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                ModernPillButton("＋ Recommended add-ons") {
+                    showAddonsDialog = false
+                    AlertDialog.Builder(this@MainActivity).setTitle("Recommended").setItems(recommended.map { it.first }.toTypedArray()) { _, k -> installFromInput(recommended[k].second) }.show()
+                }
+                ModernPillButton("＋ Install from link or name") {
+                    showAddonsDialog = false
+                    askLink()
+                }
+                ModernPillButton("＋ Install from .xpi file") {
+                    showAddonsDialog = false
+                    pickXpi()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchEngineDialog() {
+    Dialog(onDismissRequest = { showSearchEngineDialog = false }) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier.padding(16.dp).wrapContentSize()
+        ) {
+            Column(modifier = Modifier.padding(24.dp).widthIn(min = 300.dp, max = 400.dp)) {
+                Text("Search Engine", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                store.engineNames.forEachIndexed { index, name ->
+                    ModernPillButton(name) {
+                        store.setEngine(index)
+                        showSearchEngineDialog = false
+                    }
+                }
             }
         }
     }
@@ -628,6 +710,9 @@ override fun onDestroy() {
 override fun onBackPressed() {
     if (showMainMenu) { showMainMenu = false; return }
     if (showContextMenu) { showContextMenu = false; return }
+    if (showAddonsDialog) { showAddonsDialog = false; return }
+    if (showSearchEngineDialog) { showSearchEngineDialog = false; return }
+    
     if (fullscreen) { curTab()?.session?.exitFullScreen(); return }
     
     val t = curTab()
@@ -1064,36 +1149,6 @@ private fun recover(t: Tab) {
         }
     }
 
-    private fun showAddons() {
-        rt.webExtensionController.list().accept({ list ->
-            runOnUiThread {
-                val exts = ArrayList<WebExtension>()
-                if (list != null) exts.addAll(list)
-                val labels = ArrayList<String>()
-                for (e in exts) {
-                    val m = e.metaData
-                    var s = (m?.name ?: e.id)
-                    if (m != null) s += "  " + (m.version ?: "")
-                    if (m != null && !m.enabled) s += "  (off)"
-                    labels.add(s)
-                }
-                labels.add("＋ Recommended add-ons")
-                labels.add("＋ Install from link or name")
-                labels.add("＋ Install from .xpi file")
-                AlertDialog.Builder(this).setTitle("Add-ons").setItems(labels.toTypedArray()) { _, i ->
-                    if (i < exts.size) manageAddon(exts[i]) else {
-                        when (i - exts.size) {
-                            0 -> AlertDialog.Builder(this).setTitle("Recommended").setItems(recommended.map { it.first }.toTypedArray()) { _, k -> installFromInput(recommended[k].second) }.show()
-                            1 -> askLink()
-                            2 -> pickXpi()
-                            else -> {}
-                        }
-                    }
-                }.show()
-            }
-        }, { toast("Could not load the add-on list") })
-    }
-
     private fun askLink() {
         val input = EditText(this)
         input.setSingleLine(true)
@@ -1109,31 +1164,6 @@ private fun recover(t: Tab) {
         i.type = "*/*"
         @Suppress("DEPRECATION")
         startActivityForResult(i, REQ_XPI)
-    }
-
-    private fun manageAddon(e: WebExtension) {
-        val m = e.metaData
-        val ctl = rt.webExtensionController
-        val enabled = m?.enabled ?: true
-        val names = ArrayList<String>()
-        val acts = ArrayList<() -> Unit>()
-        names.add(if (enabled) "Turn off" else "Turn on")
-        acts.add {
-            val r = if (enabled) ctl.disable(e, WebExtensionController.EnableSource.USER) else ctl.enable(e, WebExtensionController.EnableSource.USER)
-            r.accept({ toast("Done") }, { toast("Could not change the add-on") })
-        }
-        val opts = m?.optionsPageUrl
-        if (!opts.isNullOrEmpty()) {
-            names.add("Open its settings page")
-            acts.add { newTab(opts) }
-        }
-        names.add("Remove")
-        acts.add {
-            AlertDialog.Builder(this).setTitle("Remove ${m?.name ?: "add-on"}?")
-                .setPositiveButton("Remove") { _, _ -> ctl.uninstall(e).accept({ toast("Removed") }, { toast("Could not remove it") }) }
-                .setNegativeButton("Cancel", null).show()
-        }
-        AlertDialog.Builder(this).setTitle(m?.name ?: e.id).setItems(names.toTypedArray()) { _, i -> acts[i]() }.show()
     }
 
     private fun installFromInput(raw: String) {
