@@ -22,6 +22,7 @@ import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -738,7 +739,7 @@ fun TabManagerSheet() {
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     
-                                    // REAL LIVE PREVIEW
+                                    // LIVE PREVIEW CAPTURED VIA PIXELCOPY
                                     Box(modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                                         if (tab.bitmap != null) {
                                             Image(
@@ -969,18 +970,22 @@ private fun recover(t: Tab) {
             if (success && tab.url.startsWith("http")) { 
                 store.addVisit(tab.url, tab.title) 
                 
-                // CAPTURE THE LIVE TAB PREVIEW
+                // THE HOLY GRAIL: CAPTURE TAB PREVIEW USING PIXELCOPY
                 runOnUiThread {
                     try {
-                        if (geckoView.session == session) {
-                            geckoView.display?.screenshot()?.capture()?.accept({ bitmap ->
-                                if (bitmap != null) {
-                                    // Scale down the bitmap to save memory
-                                    val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
-                                    tab.bitmap = scaled
-                                    runOnUiThread { uiTabCount = tabs.size } 
-                                }
-                            }, { error -> })
+                        if (geckoView.width > 0 && geckoView.height > 0) {
+                            val bitmap = Bitmap.createBitmap(geckoView.width, geckoView.height, Bitmap.Config.ARGB_8888)
+                            val window = geckoView.window
+                            if (window != null) {
+                                PixelCopy.request(window, geckoView, bitmap, { copyResult ->
+                                    if (copyResult == PixelCopy.SUCCESS) {
+                                        // Scale down the bitmap to save memory
+                                        val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
+                                        tab.bitmap = scaled
+                                        uiTabCount = tabs.size // Triggers UI refresh
+                                    }
+                                }, Handler(Looper.getMainLooper()))
+                            }
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
