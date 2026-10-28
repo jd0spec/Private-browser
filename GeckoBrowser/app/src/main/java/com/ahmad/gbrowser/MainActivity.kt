@@ -60,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
         var session: GeckoSession? = null
         var canBack = false
         var canForward = false
+        var bitmap: Bitmap? = null
     }
 
     data class Shortcut(
@@ -663,31 +665,43 @@ fun TabManagerSheet() {
                 ) {
                     items(tabs, key = { it.id }) { tab ->
                         
-                        var showDeleteConfirm by remember { mutableStateOf(false) }
                         val index = tabs.indexOf(tab)
                         
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
                                 if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
-                                    val tabToClose = tab
-                                    val idx = tabs.indexOf(tabToClose)
-                                    closeTab(idx)
-                                    scope.launch {
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = "Tab closed",
-                                            actionLabel = "Undo",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            tabs.add(idx, tabToClose)
-                                            selectTab(idx)
-                                            updateButtons()
-                                        }
-                                    }
                                     true
                                 } else false
                             }
                         )
+
+                        // Trigger removal AFTER the swipe animation completes to prevent glitch
+                        LaunchedEffect(dismissState.currentValue) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                val tabToClose = tab
+                                val idx = tabs.indexOf(tabToClose)
+                                
+                                // Reset state safely
+                                dismissState.reset()
+                                
+                                // Close tab and show undo
+                                closeTab(idx)
+                                if (tabs.isEmpty()) showTabManager = false
+                                
+                                scope.launch {
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Tab closed",
+                                        actionLabel = "Undo",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        tabs.add(idx, tabToClose)
+                                        selectTab(idx)
+                                        updateButtons()
+                                    }
+                                }
+                            }
+                        }
 
                         SwipeToDismissBox(
                             state = dismissState,
@@ -724,9 +738,31 @@ fun TabManagerSheet() {
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     
-                                    Box(modifier = Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
-                                        // GeckoView 150 removed direct capture, so we just show a placeholder text
-                                        Text(tab.url, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    // REAL LIVE PREVIEW
+                                    Box(modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
+                                        if (tab.bitmap != null) {
+                                            Image(
+                                                bitmap = tab.bitmap!!.asImageBitmap(),
+                                                contentDescription = "Live Preview",
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else if (tab.url == HOME || tab.url == "about:blank") {
+                                            Text("Start Page", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        } else {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                if (tab.url.isNotBlank()) {
+                                                    AsyncImage(
+                                                        model = "https://www.google.com/s2/favicons?domain=${tab.url}&sz=128",
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp).clip(RoundedCornerShape(8.dp)),
+                                                        contentScale = ContentScale.Fit
+                                                    )
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                }
+                                                Text("Loading...", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -761,6 +797,7 @@ override fun onDestroy() {
     for (t in tabs) { 
         try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {} 
         t.session = null
+        t.bitmap?.recycle()
     }
     super.onDestroy()
 }
@@ -868,7 +905,7 @@ private fun closeTab(i: Int) {
     if (i !in tabs.indices) return
     val t = tabs[i]; val wasCurrent = (i == current)
     if (wasCurrent) geckoView.releaseSession()
-    t.session?.let { if (it.isOpen) it.close() }; t.session = null; tabs.removeAt(i)
+    t.session?.let { if (it.isOpen) it.close() }; t.session = null; t.bitmap?.recycle(); tabs.removeAt(i)
     
     if (tabs.isEmpty()) { current = -1; newTab(HOME); return }
     if (wasCurrent) { current = -1; selectTab(minOf(i, tabs.size - 1)) } else { if (i < current) current--; updateButtons() }
@@ -876,7 +913,7 @@ private fun closeTab(i: Int) {
 
 private fun closeAllTabs() {
     geckoView.releaseSession()
-    for (t in tabs) { t.session?.let { if (it.isOpen) it.close() }; t.session = null }
+    for (t in tabs) { t.session?.let { if (it.isOpen) it.close() }; t.session = null; t.bitmap?.recycle() }
     tabs.clear(); current = -1
 }
 
@@ -931,6 +968,24 @@ private fun recover(t: Tab) {
             if (isCurrent()) runOnUiThread { uiIsLoading = false }
             if (success && tab.url.startsWith("http")) { 
                 store.addVisit(tab.url, tab.title) 
+                
+                // CAPTURE THE LIVE TAB PREVIEW
+                runOnUiThread {
+                    try {
+                        if (geckoView.session == session) {
+                            geckoView.display?.screenshot()?.capture()?.accept({ bitmap ->
+                                if (bitmap != null) {
+                                    // Scale down the bitmap to save memory
+                                    val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
+                                    tab.bitmap = scaled
+                                    runOnUiThread { uiTabCount = tabs.size } 
+                                }
+                            }, { error -> })
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
             }
         }
 
