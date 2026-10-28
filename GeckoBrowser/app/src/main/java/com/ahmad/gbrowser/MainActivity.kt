@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -59,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -87,6 +89,7 @@ import org.mozilla.geckoview.WebResponse
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 import com.ahmad.gbrowser.downloads.ClintDownloadManager
 import com.ahmad.gbrowser.downloads.DownloadsActivity
 
@@ -100,9 +103,11 @@ class MainActivity : ComponentActivity() {
     }
 
     class Tab(var url: String, var title: String = "") {
+        val id: String = UUID.randomUUID().toString() // FIX: Unique ID prevents swipe glitch
         var session: GeckoSession? = null
         var canBack = false
         var canForward = false
+        var bitmap: Bitmap? = null // NEW: Holds the live page preview
     }
 
     data class Shortcut(
@@ -125,7 +130,6 @@ class MainActivity : ComponentActivity() {
     private var uiTabCount by mutableStateOf(1)
     private var uiIsFullscreen by mutableStateOf(false)
     
-    // UI Overlays
     private var showMainMenu by mutableStateOf(false)
     private var showContextMenu by mutableStateOf(false)
     private var showAddonsDialog by mutableStateOf(false)
@@ -262,6 +266,7 @@ fun BrowserScreen() {
         }
     }
 }
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomePage(onSearch: (String) -> Unit) {
@@ -636,7 +641,7 @@ fun SearchEngineDialog() {
         }
     }
 }
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TabManagerSheet() {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
@@ -659,13 +664,19 @@ fun TabManagerSheet() {
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(tabs) { tab ->
+                    // FIX: key = { it.id } prevents the grid from glitching when swiping
+                    items(tabs, key = { it.id }) { tab ->
+                        
+                        var showDeleteConfirm by remember { mutableStateOf(false) }
+                        val index = tabs.indexOf(tab)
+                        
+                        // FIX: Swipe logic
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
                                 if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
                                     val tabToClose = tab
-                                    val index = tabs.indexOf(tabToClose)
-                                    closeTab(index)
+                                    val idx = tabs.indexOf(tabToClose)
+                                    closeTab(idx)
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
                                             message = "Tab closed",
@@ -673,9 +684,8 @@ fun TabManagerSheet() {
                                             duration = SnackbarDuration.Short
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
-                                            // Undo the close by re-adding the tab
-                                            tabs.add(index, tabToClose)
-                                            selectTab(index)
+                                            tabs.add(idx, tabToClose)
+                                            selectTab(idx)
                                             updateButtons()
                                         }
                                     }
@@ -695,12 +705,11 @@ fun TabManagerSheet() {
                                 }
                             }
                         ) {
-                            val index = tabs.indexOf(tab)
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 border = BorderStroke(if (index == current) 2.dp else 1.dp, if (index == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-                                modifier = Modifier.height(140.dp).clickable {
+                                modifier = Modifier.height(160.dp).clickable {
                                     selectTab(index)
                                     showTabManager = false
                                 }
@@ -717,14 +726,21 @@ fun TabManagerSheet() {
                                             Spacer(modifier = Modifier.width(8.dp))
                                         }
                                         Text(tab.title.ifBlank { "New Tab" }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        IconButton(onClick = { /* handled by swipe now */ }, modifier = Modifier.size(24.dp)) {
-                                            // No close icon here, rely on swipe
-                                        }
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    // Fake a website preview with colored background
-                                    Box(modifier = Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
-                                        Text(tab.url, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    
+                                    // FIX: Show actual webpage screenshot
+                                    Box(modifier = Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                                        if (tab.bitmap != null) {
+                                            Image(
+                                                bitmap = tab.bitmap!!.asImageBitmap(),
+                                                contentDescription = "Preview",
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Text("Loading...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                             }
@@ -756,7 +772,11 @@ override fun onStop() { super.onStop(); if (!skipSave) saveTabs() }
 
 override fun onDestroy() {
     try { geckoView.releaseSession() } catch (e: Exception) {}
-    for (t in tabs) { try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}; t.session = null }
+    for (t in tabs) { 
+        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {} 
+        t.session = null
+        t.bitmap?.recycle() // FIX: Recycle memory
+    }
     super.onDestroy()
 }
 
@@ -863,7 +883,7 @@ private fun closeTab(i: Int) {
     if (i !in tabs.indices) return
     val t = tabs[i]; val wasCurrent = (i == current)
     if (wasCurrent) geckoView.releaseSession()
-    t.session?.let { if (it.isOpen) it.close() }; t.session = null; tabs.removeAt(i)
+    t.session?.let { if (it.isOpen) it.close() }; t.session = null; t.bitmap?.recycle(); tabs.removeAt(i)
     
     if (tabs.isEmpty()) { current = -1; newTab(HOME); return }
     if (wasCurrent) { current = -1; selectTab(minOf(i, tabs.size - 1)) } else { if (i < current) current--; updateButtons() }
@@ -871,7 +891,7 @@ private fun closeTab(i: Int) {
 
 private fun closeAllTabs() {
     geckoView.releaseSession()
-    for (t in tabs) { t.session?.let { if (it.isOpen) it.close() }; t.session = null }
+    for (t in tabs) { t.session?.let { if (it.isOpen) it.close() }; t.session = null; t.bitmap?.recycle() }
     tabs.clear(); current = -1
 }
 
@@ -924,7 +944,17 @@ private fun recover(t: Tab) {
 
         override fun onPageStop(session: GeckoSession, success: Boolean) {
             if (isCurrent()) runOnUiThread { uiIsLoading = false }
-            if (success && tab.url.startsWith("http")) { store.addVisit(tab.url, tab.title) }
+            if (success && tab.url.startsWith("http")) { 
+                store.addVisit(tab.url, tab.title) 
+                
+                // FIX: Capture screenshot for tab manager
+                session.capture().accept({ bitmap ->
+                    tab.bitmap = bitmap
+                    runOnUiThread { uiTabCount = tabs.size } // Triggers recompose to show the new image
+                }, { error -> 
+                    // Ignore errors
+                })
+            }
         }
 
         override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
