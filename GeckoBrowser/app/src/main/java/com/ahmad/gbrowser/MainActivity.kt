@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -31,10 +30,8 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.URLUtil
 import android.widget.BaseAdapter
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -48,21 +45,33 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ClearAll
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -109,13 +118,19 @@ class MainActivity : ComponentActivity() {
     private lateinit var rt: GeckoRuntime
     private lateinit var geckoView: GeckoView
 
+    // UI State
     private var uiUrl by mutableStateOf("")
     private var uiProgress by mutableStateOf(0)
     private var uiIsLoading by mutableStateOf(false)
     private var uiTabCount by mutableStateOf(1)
-    private var uiCanBack by mutableStateOf(false)
-    private var uiCanForward by mutableStateOf(false)
     private var uiIsFullscreen by mutableStateOf(false)
+    
+    // Menu States
+    private var showMainMenu by mutableStateOf(false)
+    private var showContextMenu by mutableStateOf(false)
+    private var contextLink by mutableStateOf<String?>(null)
+    private var contextText by mutableStateOf<String?>(null)
+    private var contextImg by mutableStateOf<String?>(null)
 
     private val tabs = ArrayList<Tab>()
     private var current = -1
@@ -162,15 +177,33 @@ class MainActivity : ComponentActivity() {
     }
 
     setContent {
-        MaterialTheme(
-            colorScheme = lightColorScheme(
-                primary = androidx.compose.ui.graphics.Color(0xFF6750A4),
-                surface = androidx.compose.ui.graphics.Color(0xFFFFFBFE),
-                surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE7E0EC),
-                onSurface = androidx.compose.ui.graphics.Color(0xFF1C1B1F)
+        val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+        val colorScheme = if (isDark) {
+            darkColorScheme(
+                primary = ComposeColor(0xFFD0BCFF),
+                onPrimary = ComposeColor(0xFF381E72),
+                background = ComposeColor.Black, // AMOLED Black
+                surface = ComposeColor.Black,    // AMOLED Black
+                surfaceVariant = ComposeColor(0xFF1E1E1E),
+                onSurface = ComposeColor(0xFFE6E1E5),
+                onSurfaceVariant = ComposeColor(0xFFCAC4D0)
             )
-        ) {
+        } else {
+            lightColorScheme(
+                primary = ComposeColor(0xFF6750A4),
+                onPrimary = ComposeColor.White,
+                background = ComposeColor(0xFFFFFBFE),
+                surface = ComposeColor(0xFFFFFBFE),
+                surfaceVariant = ComposeColor(0xFFE7E0EC),
+                onSurface = ComposeColor(0xFF1C1B1F),
+                onSurfaceVariant = ComposeColor(0xFF49454F)
+            )
+        }
+        
+        MaterialTheme(colorScheme = colorScheme) {
             BrowserScreen()
+            if (showMainMenu) MainMenuSheet()
+            if (showContextMenu) ContextMenuSheet()
         }
     }
 
@@ -211,8 +244,7 @@ fun BrowserScreen() {
             }
         }
     }
-}
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomePage(onSearch: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
@@ -332,19 +364,9 @@ fun HomePage(onSearch: (String) -> Unit) {
             title = { Text(if (editingShortcut == null) "Add Shortcut" else "Edit Shortcut") },
             text = {
                 Column {
-                    OutlinedTextField(
-                        value = nameState,
-                        onValueChange = { nameState = it },
-                        label = { Text("Name") },
-                        singleLine = true
-                    )
+                    OutlinedTextField(value = nameState, onValueChange = { nameState = it }, label = { Text("Name") }, singleLine = true)
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = urlState,
-                        onValueChange = { urlState = it },
-                        label = { Text("URL") },
-                        singleLine = true
-                    )
+                    OutlinedTextField(value = urlState, onValueChange = { urlState = it }, label = { Text("URL") }, singleLine = true)
                 }
             },
             confirmButton = {
@@ -356,8 +378,7 @@ fun HomePage(onSearch: (String) -> Unit) {
                             shortcuts = shortcuts.map { if (it.id == editingShortcut?.id) it.copy(name = nameState, url = urlState) else it }
                         }
                     }
-                    showAddDialog = false
-                    editingShortcut = null
+                    showAddDialog = false; editingShortcut = null
                 }) { Text("Save") }
             },
             dismissButton = {
@@ -365,8 +386,7 @@ fun HomePage(onSearch: (String) -> Unit) {
                     if (editingShortcut != null) {
                         TextButton(onClick = {
                             shortcuts = shortcuts.filter { it.id != editingShortcut?.id }
-                            showAddDialog = false
-                            editingShortcut = null
+                            showAddDialog = false; editingShortcut = null
                         }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -382,28 +402,15 @@ fun HomePage(onSearch: (String) -> Unit) {
 fun QuickLink(name: String, onClick: () -> Unit, onLongClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick
-        )
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
-        Surface(
-            modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
-        ) {
+        Surface(modifier = Modifier.size(56.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
             Box(contentAlignment = Alignment.Center) {
                 Text(name.take(1).uppercase(), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = name,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Text(text = name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 @OptIn(ExperimentalMaterial3Api::class)
@@ -413,9 +420,7 @@ fun BottomBar() {
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(uiUrl) {
-        if (textFieldValue != uiUrl && uiUrl != HOME && uiUrl != "about:blank") {
-            textFieldValue = uiUrl
-        }
+        if (textFieldValue != uiUrl && uiUrl != HOME && uiUrl != "about:blank") textFieldValue = uiUrl
     }
 
     Row(
@@ -436,47 +441,30 @@ fun BottomBar() {
         }
 
         Surface(
-            modifier = Modifier
-                .weight(1f)
-                .height(48.dp),
+            modifier = Modifier.weight(1f).height(48.dp),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (textFieldValue.startsWith("https://") || textFieldValue == HOME) {
                     Icon(Icons.Default.Lock, "Secure", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Icon(Icons.Default.Search, "Search", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                
                 Spacer(modifier = Modifier.width(8.dp))
-                
                 BasicTextField(
                     value = if (textFieldValue == HOME || textFieldValue == "about:blank") "" else textFieldValue,
                     onValueChange = { textFieldValue = it },
                     modifier = Modifier.weight(1f),
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface),
-                    singleLine = true,
-                    maxLines = 1,
+                    singleLine = true, maxLines = 1,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Go, keyboardType = KeyboardType.Uri),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                        onGo = {
-                            go(textFieldValue)
-                            keyboardController?.hide()
-                        }
+                        onGo = { go(textFieldValue); keyboardController?.hide() }
                     ),
                     decorationBox = { innerTextField ->
                         if (textFieldValue.isEmpty() || textFieldValue == HOME || textFieldValue == "about:blank") {
-                            Text(
-                                text = "Search or enter address",
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Text("Search or enter address", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         innerTextField()
                     }
@@ -485,17 +473,111 @@ fun BottomBar() {
         }
 
         Box(
-            modifier = Modifier
-                .size(40.dp)
-                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                .clickable { showTabs() },
+            modifier = Modifier.size(40.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)).clickable { showTabs() },
             contentAlignment = Alignment.Center
         ) {
             Text(uiTabCount.toString(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
 
-        IconButton(onClick = { showMenu() }) {
+        IconButton(onClick = { showMainMenu = true }) {
             Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainMenuSheet() {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(
+        onDismissRequest = { showMainMenu = false },
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 32.dp)
+        ) {
+            MenuItem(icon = Icons.Default.Add, text = "New Tab") { showMainMenu = false; newTab(HOME) }
+            MenuItem(icon = Icons.Default.History, text = "History") { showMainMenu = false; showHistory() }
+            MenuItem(icon = Icons.Default.SettingsSuggest, text = "Add-ons") { showMainMenu = false; showAddons() }
+            MenuItem(icon = Icons.Default.Download, text = "Downloads") { showMainMenu = false; startActivity(Intent(this@MainActivity, DownloadsActivity::class.java)) }
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            MenuItem(icon = Icons.Default.ClearAll, text = "Clear data now…") { 
+                showMainMenu = false
+                chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } } 
+            }
+            MenuItem(icon = Icons.Default.Delete, text = "Auto-clear on exit…") { 
+                showMainMenu = false
+                chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") } 
+            }
+            MenuItem(icon = Icons.Default.Search, text = "Search engine: " + store.engineNames[store.engineIndex()]) { 
+                showMainMenu = false
+                AlertDialog.Builder(this@MainActivity).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            MenuItem(icon = Icons.Default.Settings, text = "Settings") { 
+                showMainMenu = false
+                toast("Settings coming soon!") 
+            }
+            MenuItem(icon = Icons.Default.Info, text = "Exit") { 
+                showMainMenu = false; exitApp() 
+            }
+        }
+    }
+}
+
+@Composable
+fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = text, tint = MaterialTheme.colorScheme.onSurface)
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(text, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContextMenuSheet() {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(
+        onDismissRequest = { showContextMenu = false },
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)
+        ) {
+            contextLink?.let { link ->
+                MenuItem(icon = Icons.Default.OpenInNew, text = "Open link in new tab") { 
+                    showContextMenu = false; newTab(link) 
+                }
+                MenuItem(icon = Icons.Default.ContentCopy, text = "Copy link") { 
+                    showContextMenu = false; copyText(link) 
+                }
+            }
+            contextText?.let { txt ->
+                MenuItem(icon = Icons.Default.ContentCopy, text = "Copy text") { 
+                    showContextMenu = false; copyText(txt) 
+                }
+            }
+            contextImg?.let { img ->
+                MenuItem(icon = Icons.Default.Image, text = "Open image in new tab") { 
+                    showContextMenu = false; newTab(img) 
+                }
+                MenuItem(icon = Icons.Default.ContentCopy, text = "Copy image link") { 
+                    showContextMenu = false; copyText(img) 
+                }
+            }
         }
     }
 }
@@ -528,6 +610,8 @@ override fun onDestroy() {
 @Deprecated("Deprecated in Java")
 @Suppress("DEPRECATION")
 override fun onBackPressed() {
+    if (showMainMenu) { showMainMenu = false; return }
+    if (showContextMenu) { showContextMenu = false; return }
     if (fullscreen) {
         curTab()?.session?.exitFullScreen()
         return
@@ -562,9 +646,7 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
             Thread {
                 try {
                     val f = File(cacheDir, "addon-" + System.currentTimeMillis() + ".xpi")
-                    contentResolver.openInputStream(uri)!!.use { i ->
-                        f.outputStream().use { o -> i.copyTo(o) }
-                    }
+                    contentResolver.openInputStream(uri)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
                     runOnUiThread { installAddon(Uri.fromFile(f).toString()) }
                 } catch (e: Exception) {
                     toast("Could not read that file")
@@ -581,8 +663,6 @@ private fun updateButtons() {
     val t = curTab()
     runOnUiThread {
         uiTabCount = tabs.size
-        uiCanBack = t?.canBack == true
-        uiCanForward = t?.canForward == true
     }
 }
 
@@ -614,8 +694,7 @@ private fun toUrl(input: String): String {
     if (t.isEmpty() || t == HOME) return HOME
     val lower = t.lowercase()
     if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
-        lower.startsWith("file:") || lower.startsWith("moz-extension:")
-    ) return t
+        lower.startsWith("file:") || lower.startsWith("moz-extension:")) return t
     if (lower == "localhost" || lower.startsWith("localhost:")) return "http://$t"
     if (!t.contains(' ') && t.contains('.')) return "https://$t"
     return store.searchUrl() + Uri.encode(t)
@@ -683,13 +762,10 @@ private fun closeTab(i: Int) {
     t.session = null
     tabs.removeAt(i)
     if (tabs.isEmpty()) {
-        current = -1
-        newTab(HOME)
-        return
+        current = -1; newTab(HOME); return
     }
     if (wasCurrent) {
-        current = -1
-        selectTab(minOf(i, tabs.size - 1))
+        current = -1; selectTab(minOf(i, tabs.size - 1))
     } else {
         if (i < current) current--
         updateButtons()
@@ -711,9 +787,7 @@ private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, cur
 private fun restoreTabs() {
     val (saved, cur) = store.loadTabs()
     if (saved.isEmpty() || (saved.size == 1 && saved[0].first == "https://duckduckgo.com")) {
-        store.clearTabs()
-        newTab(HOME)
-        return
+        store.clearTabs(); newTab(HOME); return
     }
     for ((u, t) in saved) tabs.add(Tab(u, t))
     selectTab(cur.coerceIn(0, tabs.size - 1))
@@ -746,23 +820,11 @@ private fun recover(t: Tab) {
         }
 
         override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
-            val link = element.linkUri
-            val img = element.srcUri
-            val names = ArrayList<String>()
-            val acts = ArrayList<() -> Unit>()
-            if (link != null) {
-                names.add("Open link in new tab")
-                acts.add { newTab(link) }
-                names.add("Copy link")
-                acts.add { copyText(link) }
-            }
-            if (img != null) {
-                names.add("Open image/media in new tab")
-                acts.add { newTab(img) }
-            }
-            if (names.isEmpty()) return
-            runOnUiThread {
-                AlertDialog.Builder(this@MainActivity).setItems(names.toTypedArray()) { _, i -> acts[i]() }.show()
+            contextLink = element.linkUri
+            contextText = element.textContent
+            contextImg = element.srcUri
+            if (contextLink != null || contextImg != null || contextText != null) {
+                runOnUiThread { showContextMenu = true }
             }
         }
 
@@ -794,12 +856,10 @@ private fun recover(t: Tab) {
 
         override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
             tab.canBack = canGoBack
-            if (isCurrent()) runOnUiThread { uiCanBack = canGoBack }
         }
 
         override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
             tab.canForward = canGoForward
-            if (isCurrent()) runOnUiThread { uiCanForward = canGoForward }
         }
 
         override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
@@ -811,13 +871,7 @@ private fun recover(t: Tab) {
                     toast("Cannot download live/DRM streams directly.")
                 } else {
                     val name = URLUtil.guessFileName(videoUrl, null, "video/mp4")
-                    
-                    ClintDownloadManager.enqueue(
-                        context = this@MainActivity,
-                        url = videoUrl,
-                        filename = name,
-                        userAgent = ""
-                    )
+                    ClintDownloadManager.enqueue(context = this@MainActivity, url = videoUrl, filename = name, userAgent = "")
                     toast("Downloading video via ADM...")
                 }
                 return GeckoResult.fromValue(AllowOrDeny.DENY)
@@ -851,8 +905,8 @@ private fun recover(t: Tab) {
 
     private fun copyText(s: String) {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("link", s))
-        toast("Copied")
+        cm.setPrimaryClip(ClipData.newPlainText("text", s))
+        toast("Copied to clipboard")
     }
 
     private fun handleDownload(r: WebResponse) {
@@ -866,12 +920,7 @@ private fun recover(t: Tab) {
         val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
         val name = URLUtil.guessFileName(uri, cd, ct)
         
-        ClintDownloadManager.enqueue(
-            context = this@MainActivity,
-            url = uri,
-            filename = name,
-            userAgent = ""
-        )
+        ClintDownloadManager.enqueue(context = this@MainActivity, url = uri, filename = name, userAgent = "")
         toast("Download started via ADM")
     }
 
@@ -951,23 +1000,6 @@ private fun recover(t: Tab) {
             .setPositiveButton("Clear all") { _, _ -> store.clearHistory(); toast("History cleared") }
             .setNegativeButton("Close", null)
             .show()
-    }
-
-    private fun showMenu() {
-        val items = arrayOf("New tab", "History", "Add-ons", "Clear data now…", "Auto-clear on exit…", "Search engine: " + store.engineNames[store.engineIndex()], "Downloads", "Exit")
-        AlertDialog.Builder(this).setItems(items) { _, i ->
-            when (i) {
-                0 -> newTab(HOME)
-                1 -> showHistory()
-                2 -> showAddons()
-                3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
-                4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
-                5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
-                6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
-                7 -> exitApp()
-                else -> {}
-            }
-        }.show()
     }
 
     private fun chooseTypes(title: String, initial: BooleanArray, okLabel: String, onOk: (BooleanArray) -> Unit) {
