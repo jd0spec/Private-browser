@@ -265,8 +265,6 @@ fun BrowserScreen() {
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomePage(onSearch: (String) -> Unit) {
-    var query by remember { mutableStateOf("") }
-    val keyboardController = LocalSoftwareKeyboardController.current
     val coroutineScope = rememberCoroutineScope()
 
     var shortcuts by remember { mutableStateOf(listOf(
@@ -290,37 +288,6 @@ fun HomePage(onSearch: (String) -> Unit) {
         Text("Gecko", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(8.dp))
         Text("Browse the web privately", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Surface(
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 2.dp
-        ) {
-            Row(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Search, "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.width(12.dp))
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.weight(1f),
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
-                    singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                        onSearch = { if (query.isNotBlank()) { onSearch(query); keyboardController?.hide() } }
-                    ),
-                    decorationBox = { innerTextField ->
-                        if (query.isEmpty()) {
-                            Text("Search or type URL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        innerTextField()
-                    }
-                )
-            }
-        }
 
         Spacer(modifier = Modifier.height(48.dp))
 
@@ -435,19 +402,9 @@ fun QuickLink(name: String, url: String, iconUrl: String?, onClick: () -> Unit, 
         Surface(modifier = Modifier.size(56.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
             Box(contentAlignment = Alignment.Center) {
                 if (iconUrl != null) {
-                    AsyncImage(
-                        model = iconUrl,
-                        contentDescription = name,
-                        modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Fit
-                    )
+                    AsyncImage(model = iconUrl, contentDescription = name, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Fit)
                 } else if (url.isNotBlank()) {
-                    AsyncImage(
-                        model = "https://www.google.com/s2/favicons?domain=${url}&sz=128",
-                        contentDescription = name,
-                        modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Fit
-                    )
+                    AsyncImage(model = "https://www.google.com/s2/favicons?domain=${url}&sz=128", contentDescription = name, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Fit)
                 } else {
                     Text(name.take(1).uppercase(), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
@@ -483,17 +440,32 @@ fun FolderIcon(shortcut: Shortcut, onClick: () -> Unit, onLongClick: () -> Unit)
         Surface(modifier = Modifier.size(56.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
             Column(modifier = Modifier.fillMaxSize().padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)))
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.secondary, RoundedCornerShape(4.dp)))
+                    FolderItemPreview(shortcut.items.getOrNull(0), Modifier.weight(1f))
+                    FolderItemPreview(shortcut.items.getOrNull(1), Modifier.weight(1f))
                 }
                 Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.tertiary, RoundedCornerShape(4.dp)))
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp)))
+                    FolderItemPreview(shortcut.items.getOrNull(2), Modifier.weight(1f))
+                    FolderItemPreview(shortcut.items.getOrNull(3), Modifier.weight(1f))
                 }
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(shortcut.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+fun FolderItemPreview(item: Shortcut?, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+        if (item != null) {
+            if (item.iconUrl != null) {
+                AsyncImage(model = item.iconUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else if (item.url.isNotBlank()) {
+                AsyncImage(model = "https://www.google.com/s2/favicons?domain=${item.url}&sz=128", contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Text(item.name.take(1).uppercase(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary)
+            }
+        }
     }
 }
 @OptIn(ExperimentalMaterial3Api::class)
@@ -668,6 +640,8 @@ fun SearchEngineDialog() {
 @Composable
 fun TabManagerSheet() {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     ModalBottomSheet(onDismissRequest = { showTabManager = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.background) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -686,51 +660,79 @@ fun TabManagerSheet() {
                     modifier = Modifier.weight(1f)
                 ) {
                     items(tabs) { tab ->
-                        var showDeleteConfirm by remember { mutableStateOf(false) }
-                        val index = tabs.indexOf(tab)
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                                    val tabToClose = tab
+                                    val index = tabs.indexOf(tabToClose)
+                                    closeTab(index)
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Tab closed",
+                                            actionLabel = "Undo",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            // Undo the close by re-adding the tab
+                                            tabs.add(index, tabToClose)
+                                            selectTab(index)
+                                            updateButtons()
+                                        }
+                                    }
+                                    true
+                                } else false
+                            }
+                        )
 
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(if (index == current) 2.dp else 1.dp, if (index == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-                            modifier = Modifier.height(120.dp).clickable {
-                                selectTab(index)
-                                showTabManager = false
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = true,
+                            enableDismissFromEndToStart = true,
+                            backgroundContent = {
+                                val color = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(color).padding(16.dp), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.onError)
+                                }
                             }
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text(tab.title.ifBlank { "New Tab" }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                                    IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Close, "Close", tint = MaterialTheme.colorScheme.onSurface)
+                            val index = tabs.indexOf(tab)
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(if (index == current) 2.dp else 1.dp, if (index == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                                modifier = Modifier.height(140.dp).clickable {
+                                    selectTab(index)
+                                    showTabManager = false
+                                }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        if (tab.url.isNotBlank() && tab.url != HOME) {
+                                            AsyncImage(
+                                                model = "https://www.google.com/s2/favicons?domain=${tab.url}&sz=64",
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)),
+                                                contentScale = ContentScale.Fit
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        Text(tab.title.ifBlank { "New Tab" }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        IconButton(onClick = { /* handled by swipe now */ }, modifier = Modifier.size(24.dp)) {
+                                            // No close icon here, rely on swipe
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    // Fake a website preview with colored background
+                                    Box(modifier = Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                                        Text(tab.url, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(tab.url, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }
-
-                        // Countdown / Delete Confirmation Overlay
-                        if (showDeleteConfirm) {
-                            AlertDialog(
-                                onDismissRequest = { showDeleteConfirm = false },
-                                title = { Text("Close Tab?") },
-                                text = { Text("This tab will be closed.") },
-                                confirmButton = {
-                                    TextButton(onClick = {
-                                        showDeleteConfirm = false
-                                        closeTab(index)
-                                        if (tabs.isEmpty()) showTabManager = false
-                                    }) { Text("Close") }
-                                },
-                                dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
-                            )
                         }
                     }
                 }
             }
             
-            // Floating Action Button for New Tab
             FloatingActionButton(
                 onClick = { showTabManager = false; newTab(HOME) },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
@@ -738,6 +740,8 @@ fun TabManagerSheet() {
             ) {
                 Icon(Icons.Default.Add, "New Tab")
             }
+            
+            SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }
