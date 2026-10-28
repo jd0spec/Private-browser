@@ -1,6 +1,5 @@
 package com.ahmad.gbrowser
 
-import com.ahmad.gbrowser.downloads.DownloadsActivity
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
@@ -45,11 +44,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -75,15 +79,14 @@ import org.mozilla.geckoview.WebResponse
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-
-// --- ADM IMPORTS ---
 import com.ahmad.gbrowser.downloads.ClintDownloadManager
+import com.ahmad.gbrowser.downloads.DownloadsActivity
 
 class MainActivity : ComponentActivity() {
 
     companion object {
         var runtime: GeckoRuntime? = null
-        const val HOME = "https://duckduckgo.com"
+        const val HOME = "browser://home"
         const val REQ_XPI = 11
         const val REQ_FILE = 12
     }
@@ -97,8 +100,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var store: Store
     private lateinit var rt: GeckoRuntime
     private lateinit var geckoView: GeckoView
-    
-    // Compose UI State
+    private lateinit var downloadManager: ClintDownloadManager
+
     private var uiUrl by mutableStateOf("")
     private var uiProgress by mutableStateOf(0)
     private var uiIsLoading by mutableStateOf(false)
@@ -128,7 +131,7 @@ class MainActivity : ComponentActivity() {
 
     private val okSchemes = setOf(
         "http", "https", "about", "file", "data", "blob", "javascript",
-        "moz-extension", "resource", "view-source", "ws", "wss", "chrome"
+        "moz-extension", "resource", "view-source", "ws", "wss", "chrome", "browser"
     )
     override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -142,9 +145,14 @@ class MainActivity : ComponentActivity() {
     rt.webExtensionController.setPromptDelegate(addonPrompt)
     
     geckoView = GeckoView(this)
+    
+    ClintDownloadManager.init(this)
 
-    // Initialize the engine to create the notification channel
-ClintDownloadManager.init(this)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+        }
+    }
 
     setContent {
         MaterialTheme(
@@ -176,10 +184,16 @@ fun BrowserScreen() {
         bottomBar = { if (!uiIsFullscreen) BottomBar() }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            AndroidView(
-                factory = { geckoView },
-                modifier = Modifier.fillMaxSize()
-            )
+            if (uiUrl == "browser://home" || uiUrl.isEmpty()) {
+                HomePage { searchQuery ->
+                    go(searchQuery)
+                }
+            } else {
+                AndroidView(
+                    factory = { geckoView },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -191,43 +205,63 @@ fun TopBar() {
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(uiUrl) { 
-        if (textFieldValue != uiUrl) textFieldValue = uiUrl 
+        if (textFieldValue != uiUrl && uiUrl != "browser://home") textFieldValue = uiUrl 
     }
 
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 8.dp, vertical = 6.dp)
                 .statusBarsPadding(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextField(
-                value = textFieldValue,
-                onValueChange = { textFieldValue = it },
+            Surface(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
-                placeholder = { Text("Search or enter address", fontSize = 14.sp) },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = androidx.compose.ui.graphics.Color(0xFFE7E0EC),
-                    unfocusedContainerColor = androidx.compose.ui.graphics.Color(0xFFE7E0EC),
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                ),
                 shape = RoundedCornerShape(24.dp),
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    imeAction = ImeAction.Go,
-                    keyboardType = KeyboardType.Uri
-                ),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                    onGo = { 
-                        go(textFieldValue) 
-                        keyboardController?.hide()
-                    }
-                )
-            )
+                color = androidx.compose.ui.graphics.Color(0xFFE7E0EC)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    BasicTextField(
+                        value = if (textFieldValue == "browser://home") "" else textFieldValue,
+                        onValueChange = { textFieldValue = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 15.sp,
+                            color = androidx.compose.ui.graphics.Color(0xFF1C1B1F)
+                        ),
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = ImeAction.Go,
+                            keyboardType = KeyboardType.Uri
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onGo = { 
+                                go(textFieldValue) 
+                                keyboardController?.hide()
+                            }
+                        ),
+                        decorationBox = { innerTextField ->
+                            if (textFieldValue.isEmpty() || textFieldValue == "browser://home") {
+                                Text(
+                                    text = "Search or enter address",
+                                    fontSize = 15.sp,
+                                    color = androidx.compose.ui.graphics.Color.Gray
+                                )
+                            }
+                            innerTextField()
+                        }
+                    )
+                }
+            }
+            
             IconButton(onClick = { curTab()?.session?.reload(GeckoSession.LOAD_FLAGS_NONE) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = androidx.compose.ui.graphics.Color(0xFF6750A4))
             }
@@ -272,6 +306,132 @@ fun BottomBar() {
         IconButton(onClick = { showMenu() }) {
             Icon(Icons.Default.MoreVert, "Menu", tint = androidx.compose.ui.graphics.Color(0xFF1C1B1F))
         }
+    }
+}
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomePage(onSearch: (String) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "Gecko",
+            style = MaterialTheme.typography.displayMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Browse the web privately",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 12.dp)
+                )
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.weight(1f),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onSearch = {
+                            if (query.isNotBlank()) {
+                                onSearch(query)
+                                keyboardController?.hide()
+                            }
+                        }
+                    ),
+                    decorationBox = { innerTextField ->
+                        if (query.isEmpty()) {
+                            Text(
+                                text = "Search or type URL",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 16.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(64.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            QuickLink(icon = Icons.Default.Language, label = "Web") { onSearch("https://duckduckgo.com") }
+            QuickLink(icon = Icons.Default.PlayArrow, label = "Video") { onSearch("https://youtube.com") }
+            QuickLink(icon = Icons.Default.Info, label = "News") { onSearch("https://news.google.com") }
+        }
+    }
+}
+
+@Composable
+fun QuickLink(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 override fun onNewIntent(intent: Intent) {
@@ -367,7 +527,7 @@ private fun hideKeyboard() {
 }
 
 private fun display(u: String): String {
-    if (u == "about:blank") return ""
+    if (u == "browser://home" || u == "about:blank") return ""
     return u.removePrefix("https://").removePrefix("http://").removeSuffix("/")
 }
 
@@ -386,11 +546,12 @@ private fun setFullscreen(on: Boolean) {
         }
     }
 }
+
 private fun curTab(): Tab? = tabs.getOrNull(current)
 
 private fun toUrl(input: String): String {
     val t = input.trim()
-    if (t.isEmpty()) return HOME
+    if (t.isEmpty() || t == "browser://home") return HOME
     val lower = t.lowercase()
     if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("about:") ||
         lower.startsWith("file:") || lower.startsWith("moz-extension:")
@@ -428,7 +589,7 @@ private fun ensureSession(t: Tab): GeckoSession {
     s.promptDelegate = prompts
     s.open(rt)
     t.session = s
-    if (t.url.isNotEmpty()) s.loadUri(t.url)
+    if (t.url.isNotEmpty() && t.url != HOME) s.loadUri(t.url)
     return s
 }
 
@@ -441,169 +602,170 @@ private fun selectTab(i: Int) {
     geckoView.releaseSession()
     geckoView.setSession(s)
     s.setActive(true)
-    runOnUiThread { uiUrl = display(t.url) }
+    runOnUiThread { uiUrl = t.url }
     uiProgress = 0
     uiIsLoading = false
     updateButtons()
 }
-
-private fun closeTab(i: Int) {
-    if (i !in tabs.indices) return
-    val t = tabs[i]
-    val wasCurrent = (i == current)
-    if (wasCurrent) geckoView.releaseSession()
-    t.session?.let { if (it.isOpen) it.close() }
-    t.session = null
-    tabs.removeAt(i)
-    if (tabs.isEmpty()) {
-        current = -1
-        newTab(HOME)
-        return
-    }
-    if (wasCurrent) {
-        current = -1
-        selectTab(minOf(i, tabs.size - 1))
-    } else {
-        if (i < current) current--
-        updateButtons()
-    }
-}
-
-private fun closeAllTabs() {
-    geckoView.releaseSession()
-    for (t in tabs) {
+    private fun closeTab(i: Int) {
+        if (i !in tabs.indices) return
+        val t = tabs[i]
+        val wasCurrent = (i == current)
+        if (wasCurrent) geckoView.releaseSession()
         t.session?.let { if (it.isOpen) it.close() }
         t.session = null
+        tabs.removeAt(i)
+        if (tabs.isEmpty()) {
+            current = -1
+            newTab(HOME)
+            return
+        }
+        if (wasCurrent) {
+            current = -1
+            selectTab(minOf(i, tabs.size - 1))
+        } else {
+            if (i < current) current--
+            updateButtons()
+        }
     }
-    tabs.clear()
-    current = -1
-}
 
-private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
-
-private fun restoreTabs() {
-    val (saved, cur) = store.loadTabs()
-    if (saved.isEmpty()) {
-        newTab(HOME)
-        return
+    private fun closeAllTabs() {
+        geckoView.releaseSession()
+        for (t in tabs) {
+            t.session?.let { if (it.isOpen) it.close() }
+            t.session = null
+        }
+        tabs.clear()
+        current = -1
     }
-    for ((u, t) in saved) tabs.add(Tab(u, t))
-    selectTab(cur.coerceIn(0, tabs.size - 1))
-}
 
-private fun recover(t: Tab) {
-    runOnUiThread {
-        val wasCurrent = tabs.indexOf(t) == current
-        try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-        t.session = null
-        if (wasCurrent) selectTab(current)
+    private fun saveTabs() = store.saveTabs(tabs.map { Pair(it.url, it.title) }, current)
+
+    private fun restoreTabs() {
+        val (saved, cur) = store.loadTabs()
+        if (saved.isEmpty()) {
+            newTab(HOME)
+            return
+        }
+        for ((u, t) in saved) tabs.add(Tab(u, t))
+        selectTab(cur.coerceIn(0, tabs.size - 1))
     }
-}
 
-inner class TabDelegates(private val tab: Tab) :
-    GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
-
-    private fun isCurrent() = curTab() === tab
-
-    override fun onTitleChange(session: GeckoSession, title: String?) { tab.title = title ?: "" }
-    override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
-    override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
-    override fun onCrash(session: GeckoSession) { recover(tab) }
-    override fun onKill(session: GeckoSession) { recover(tab) }
-    
-    override fun onCloseRequest(session: GeckoSession) {
+    private fun recover(t: Tab) {
         runOnUiThread {
-            val i = tabs.indexOf(tab)
-            if (i >= 0) closeTab(i)
+            val wasCurrent = tabs.indexOf(t) == current
+            try { t.session?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+            t.session = null
+            if (wasCurrent) selectTab(current)
         }
     }
 
-    override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
-        val link = element.linkUri
-        val img = element.srcUri
-        val names = ArrayList<String>()
-        val acts = ArrayList<() -> Unit>()
-        if (link != null) {
-            names.add("Open link in new tab")
-            acts.add { newTab(link) }
-            names.add("Copy link")
-            acts.add { copyText(link) }
-        }
-        if (img != null) {
-            names.add("Open image/media in new tab")
-            acts.add { newTab(img) }
-        }
-        if (names.isEmpty()) return
-        runOnUiThread {
-            AlertDialog.Builder(this@MainActivity).setItems(names.toTypedArray()) { _, i -> acts[i]() }.show()
-        }
-    }
+    inner class TabDelegates(private val tab: Tab) :
+        GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
 
-    override fun onPageStart(session: GeckoSession, url: String) {
-        if (isCurrent()) runOnUiThread { uiProgress = 5; uiIsLoading = true }
-    }
+        private fun isCurrent() = curTab() === tab
 
-    override fun onProgressChange(session: GeckoSession, p: Int) {
-        if (isCurrent()) runOnUiThread { uiProgress = p; uiIsLoading = p in 1..99 }
-    }
-
-    override fun onPageStop(session: GeckoSession, success: Boolean) {
-        if (isCurrent()) runOnUiThread { uiIsLoading = false }
-        if (success && tab.url.startsWith("http")) {
-            store.addVisit(tab.url, tab.title)
-            // injectPlayerSkin(session)
-        }
-    }
-
-    override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
-        tab.url = url ?: ""
-        if (isCurrent()) runOnUiThread { uiUrl = display(tab.url) }
-    }
-
-    override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
-        tab.canBack = canGoBack
-        if (isCurrent()) runOnUiThread { uiCanBack = canGoBack }
-    }
-
-    override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
-        tab.canForward = canGoForward
-        if (isCurrent()) runOnUiThread { uiCanForward = canGoForward }
-    }
-
-    override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
-        val u = request.uri
+        override fun onTitleChange(session: GeckoSession, title: String?) { tab.title = title ?: "" }
+        override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
+        override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
+        override fun onCrash(session: GeckoSession) { recover(tab) }
+        override fun onKill(session: GeckoSession) { recover(tab) }
         
-        if (u.startsWith("gbrowser-dl://")) {
-            val videoUrl = Uri.decode(u.removePrefix("gbrowser-dl://"))
-            if (videoUrl.startsWith("blob:")) {
-                toast("Cannot download live/DRM streams directly.")
-            } else {
-                val name = URLUtil.guessFileName(videoUrl, null, "video/mp4")
-                
-                // SEND TO ADM (Fixed parameters)
-                ClintDownloadManager.enqueue(
-                    context = this@MainActivity,
-                    url = videoUrl,
-                    filename = name,
-                    userAgent = ""
-                )
-                toast("Downloading video via ADM...")
+        override fun onCloseRequest(session: GeckoSession) {
+            runOnUiThread {
+                val i = tabs.indexOf(tab)
+                if (i >= 0) closeTab(i)
             }
+        }
+
+        override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
+            val link = element.linkUri
+            val img = element.srcUri
+            val names = ArrayList<String>()
+            val acts = ArrayList<() -> Unit>()
+            if (link != null) {
+                names.add("Open link in new tab")
+                acts.add { newTab(link) }
+                names.add("Copy link")
+                acts.add { copyText(link) }
+            }
+            if (img != null) {
+                names.add("Open image/media in new tab")
+                acts.add { newTab(img) }
+            }
+            if (names.isEmpty()) return
+            runOnUiThread {
+                AlertDialog.Builder(this@MainActivity).setItems(names.toTypedArray()) { _, i -> acts[i]() }.show()
+            }
+        }
+
+        override fun onPageStart(session: GeckoSession, url: String) {
+            if (isCurrent()) runOnUiThread { uiProgress = 5; uiIsLoading = true }
+        }
+
+        override fun onProgressChange(session: GeckoSession, p: Int) {
+            if (isCurrent()) runOnUiThread { uiProgress = p; uiIsLoading = p in 1..99 }
+        }
+
+        override fun onPageStop(session: GeckoSession, success: Boolean) {
+            if (isCurrent()) runOnUiThread { uiIsLoading = false }
+            if (success && tab.url.startsWith("http")) {
+                store.addVisit(tab.url, tab.title)
+                // injectPlayerSkin(session)
+            }
+        }
+
+        override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+            tab.url = url ?: ""
+            if (isCurrent()) runOnUiThread { uiUrl = tab.url }
+        }
+
+        override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
+            tab.canBack = canGoBack
+            if (isCurrent()) runOnUiThread { uiCanBack = canGoBack }
+        }
+
+        override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
+            tab.canForward = canGoForward
+            if (isCurrent()) runOnUiThread { uiCanForward = canGoForward }
+        }
+
+        override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+            val u = request.uri
+            
+            if (u.startsWith("gbrowser-dl://")) {
+                val videoUrl = Uri.decode(u.removePrefix("gbrowser-dl://"))
+                if (videoUrl.startsWith("blob:")) {
+                    toast("Cannot download live/DRM streams directly.")
+                } else {
+                    val name = URLUtil.guessFileName(videoUrl, null, "video/mp4")
+                    
+                    ClintDownloadManager.enqueue(
+                        context = this@MainActivity,
+                        url = videoUrl,
+                        filename = name,
+                        userAgent = ""
+                    )
+                    toast("Downloading video via ADM...")
+                }
+                return GeckoResult.fromValue(AllowOrDeny.DENY)
+            }
+
+            if (u == "browser://home") return GeckoResult.fromValue(AllowOrDeny.DENY)
+
+            val scheme = u.substringBefore(':', "").lowercase()
+            if (scheme.isEmpty() || scheme in okSchemes) return null
+            openExternal(u)
             return GeckoResult.fromValue(AllowOrDeny.DENY)
         }
 
-        val scheme = u.substringBefore(':', "").lowercase()
-        if (scheme.isEmpty() || scheme in okSchemes) return null
-        openExternal(u)
-        return GeckoResult.fromValue(AllowOrDeny.DENY)
+        override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+            runOnUiThread { newTab(uri) }
+            return null
+        }
     }
 
-    override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-        runOnUiThread { newTab(uri) }
-        return null
-    }
-    }
-        private fun openExternal(u: String) {
+    private fun openExternal(u: String) {
         try {
             val i = if (u.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(u))
             i.addCategory(Intent.CATEGORY_BROWSABLE)
@@ -632,7 +794,6 @@ inner class TabDelegates(private val tab: Tab) :
         val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
         val name = URLUtil.guessFileName(uri, cd, ct)
         
-        // SEND NORMAL DOWNLOADS TO ADM (Fixed parameters)
         ClintDownloadManager.enqueue(
             context = this@MainActivity,
             url = uri,
@@ -721,22 +882,21 @@ inner class TabDelegates(private val tab: Tab) :
     }
 
     private fun showMenu() {
-    val items = arrayOf("New tab", "History", "Add-ons", "Clear data now…", "Auto-clear on exit…", "Search engine: " + store.engineNames[store.engineIndex()], "Downloads", "Exit")
-    AlertDialog.Builder(this).setItems(items) { _, i ->
-        when (i) {
-            0 -> newTab(HOME)
-            1 -> showHistory()
-            2 -> showAddons()
-            3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
-            4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
-            5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
-            6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
-            7 -> exitApp()
-            else -> {}
-        }
-    }.show()
+        val items = arrayOf("New tab", "History", "Add-ons", "Clear data now…", "Auto-clear on exit…", "Search engine: " + store.engineNames[store.engineIndex()], "Downloads", "Exit")
+        AlertDialog.Builder(this).setItems(items) { _, i ->
+            when (i) {
+                0 -> newTab(HOME)
+                1 -> showHistory()
+                2 -> showAddons()
+                3 -> chooseTypes("Clear data now", booleanArrayOf(true, true, false, true), "Clear") { st -> clearNow(st, false) { toast("Cleared") } }
+                4 -> chooseTypes("Auto-clear on exit", BooleanArray(4) { store.flag(autoKeys[it]) }, "Save") { st -> for (k in 0 until 4) store.setFlag(autoKeys[k], st[k]); toast("Saved") }
+                5 -> AlertDialog.Builder(this).setTitle("Search engine").setItems(store.engineNames) { _, k -> store.setEngine(k) }.show()
+                6 -> startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
+                7 -> exitApp()
+                else -> {}
+            }
+        }.show()
     }
-    
 
     private fun chooseTypes(title: String, initial: BooleanArray, okLabel: String, onOk: (BooleanArray) -> Unit) {
         val state = initial.copyOf()
@@ -894,7 +1054,7 @@ inner class TabDelegates(private val tab: Tab) :
         }.start()
     }
 
-        private fun installAddon(uri: String) {
+    private fun installAddon(uri: String) {
         rt.webExtensionController.install(uri).accept({ ext ->
             toast("Installed " + (ext?.metaData?.name ?: "add-on"))
         }, { err ->
