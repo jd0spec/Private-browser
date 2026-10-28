@@ -38,6 +38,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -63,6 +64,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -72,7 +75,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -133,9 +135,9 @@ class MainActivity : ComponentActivity() {
     private var uiUrl by mutableStateOf("")
     private var uiProgress by mutableStateOf(0)
     private var uiIsLoading by mutableStateOf(false)
-    private var uiTabCount by mutableStateOf(1)
     private var uiIsFullscreen by mutableStateOf(false)
-    private var swipeDirection by mutableStateOf(0) // For animations
+    private var swipeDirection by mutableStateOf(0) 
+    private var isEditingUrl by mutableStateOf(false)
     
     private var showMainMenu by mutableStateOf(false)
     private var showContextMenu by mutableStateOf(false)
@@ -260,22 +262,19 @@ fun BrowserScreen() {
                 )
             }
 
-            // Animated Content for Swipe Gestures
             AnimatedContent(
                 targetState = current,
                 transitionSpec = {
                     if (swipeDirection > 0) {
-                        // Swiping Left (Next Tab)
-                        (slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(250)) + fadeIn()).togetherWith(
-                            slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(250)) + fadeOut()
+                        (slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(300))).togetherWith(
+                            slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(300))
                         )
                     } else if (swipeDirection < 0) {
-                        // Swiping Right (Previous Tab)
-                        (slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(250)) + fadeIn()).togetherWith(
-                            slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(250)) + fadeOut()
+                        (slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(300))).togetherWith(
+                            slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(300))
                         )
                     } else {
-                        fadeIn() togetherWith fadeOut()
+                        fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200))
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -504,83 +503,110 @@ fun FolderItemPreview(item: Shortcut?, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BottomBar() {
-    var textFieldValue by remember { mutableStateOf(uiUrl) }
-    val keyboardController = LocalSoftwareKeyboardController.current
     var totalDragX by remember { mutableStateOf(0f) }
+    var urlText by remember { mutableStateOf(if (uiUrl == HOME || uiUrl == "about:blank") "" else uiUrl) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(uiUrl) { if (textFieldValue != uiUrl && uiUrl != HOME && uiUrl != "about:blank") textFieldValue = uiUrl }
+    LaunchedEffect(uiUrl) {
+        if (!isEditingUrl) {
+            urlText = if (uiUrl == HOME || uiUrl == "about:blank") "" else uiUrl
+        }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        IconButton(onClick = { uiUrl = HOME; curTab()?.url = HOME; geckoView.releaseSession() }) {
+        IconButton(onClick = { 
+            isEditingUrl = false
+            uiUrl = HOME
+            curTab()?.url = HOME
+            geckoView.releaseSession() 
+        }) {
             Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.onSurface)
         }
 
-        // ADDRESS BAR WITH SWIPE GESTURES
+        // ADDRESS BAR
         Surface(
             modifier = Modifier
                 .weight(1f)
                 .height(48.dp)
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { totalDragX = 0f },
-                        onDragEnd = {
-                            val threshold = 150f
-                            if (totalDragX > threshold) {
-                                // RIGHT SWIPE (Previous Tab)
-                                if (current > 0) {
-                                    swipeDirection = -1
-                                    selectTab(current - 1)
+                .pointerInput(isEditingUrl) {
+                    if (!isEditingUrl) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { totalDragX = 0f },
+                            onDragEnd = {
+                                val threshold = 150f
+                                if (totalDragX > threshold) {
+                                    if (current > 0) {
+                                        swipeDirection = -1
+                                        selectTab(current - 1)
+                                    }
+                                } else if (totalDragX < -threshold) {
+                                    if (current == tabs.size - 1) {
+                                        swipeDirection = 1
+                                        newTab(HOME)
+                                    } else if (current < tabs.size - 1) {
+                                        swipeDirection = 1
+                                        selectTab(current + 1)
+                                    }
                                 }
-                            } else if (totalDragX < -threshold) {
-                                // LEFT SWIPE (Next Tab or New Tab)
-                                if (current == tabs.size - 1) {
-                                    swipeDirection = 1
-                                    newTab(HOME)
-                                } else if (current < tabs.size - 1) {
-                                    swipeDirection = 1
-                                    selectTab(current + 1)
-                                }
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume() // Stops text scrolling
+                                totalDragX += dragAmount
                             }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume() // This stops the URL text field from scrolling
-                            totalDragX += dragAmount
-                        }
-                    )
+                        )
+                    }
                 },
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
             Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (textFieldValue.startsWith("https://") || textFieldValue == HOME) {
+                if (urlText.startsWith("https://") || urlText == HOME) {
                     Icon(Icons.Default.Lock, "Secure", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Icon(Icons.Default.Search, "Search", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                BasicTextField(
-                    value = if (textFieldValue == HOME || textFieldValue == "about:blank") "" else textFieldValue,
-                    onValueChange = { textFieldValue = it },
-                    modifier = Modifier.weight(1f),
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface),
-                    singleLine = true, maxLines = 1,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Go, keyboardType = KeyboardType.Uri),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { go(textFieldValue); keyboardController?.hide() }),
-                    decorationBox = { innerTextField ->
-                        if (textFieldValue.isEmpty() || textFieldValue == HOME || textFieldValue == "about:blank") {
-                            Text("Search or enter address", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                
+                if (isEditingUrl) {
+                    BasicTextField(
+                        value = urlText,
+                        onValueChange = { urlText = it },
+                        modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface),
+                        singleLine = true, maxLines = 1,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Go, keyboardType = KeyboardType.Uri),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { 
+                            go(urlText)
+                            isEditingUrl = false
+                            keyboardController?.hide()
+                        }),
+                        decorationBox = { innerTextField ->
+                            if (urlText.isEmpty()) {
+                                Text("Search or enter address", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            innerTextField()
                         }
-                        innerTextField()
-                    }
-                )
+                    )
+                    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+                } else {
+                    Text(
+                        text = if (urlText.isEmpty()) "Search or enter address" else urlText,
+                        modifier = Modifier.weight(1f).clickable { isEditingUrl = true },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (urlText.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 15.sp
+                    )
+                }
             }
         }
 
-        // SMALLER TAB COUNTER (Syncs with Current Tab)
+        // SMALLER TAB COUNTER (Strict Sync)
         Box(modifier = Modifier.size(28.dp).border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)).clickable { showTabManager = true }, contentAlignment = Alignment.Center) {
             Text((current + 1).coerceAtLeast(1).toString(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
@@ -718,7 +744,7 @@ fun TabManagerSheet() {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                     Text("Tabs", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
-                    Button(onClick = { showTabManager = false; newTab(HOME) }) {
+                    Button(onClick = { showTabManager = false; swipeDirection = 0; newTab(HOME) }) {
                         Text("New Tab")
                     }
                 }
@@ -736,38 +762,28 @@ fun TabManagerSheet() {
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
                                 if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                                    val tabToClose = tab
+                                    val idx = tabs.indexOf(tabToClose)
+                                    
+                                    closeTab(idx)
+                                    if (tabs.isEmpty()) showTabManager = false
+                                    
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Tab closed",
+                                            actionLabel = "Undo",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            tabs.add(idx, tabToClose)
+                                            selectTab(idx)
+                                            updateButtons()
+                                        }
+                                    }
                                     true
                                 } else false
                             }
                         )
-
-                        // Trigger removal AFTER the swipe animation completes to prevent glitch
-                        LaunchedEffect(dismissState.currentValue) {
-                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                val tabToClose = tab
-                                val idx = tabs.indexOf(tabToClose)
-                                
-                                // Reset state safely
-                                dismissState.reset()
-                                
-                                // Close tab and show undo
-                                closeTab(idx)
-                                if (tabs.isEmpty()) showTabManager = false
-                                
-                                scope.launch {
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = "Tab closed",
-                                        actionLabel = "Undo",
-                                        duration = SnackbarDuration.Short
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        tabs.add(idx, tabToClose)
-                                        selectTab(idx)
-                                        updateButtons()
-                                    }
-                                }
-                            }
-                        }
 
                         SwipeToDismissBox(
                             state = dismissState,
@@ -778,7 +794,8 @@ fun TabManagerSheet() {
                                 Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(color).padding(16.dp), contentAlignment = Alignment.Center) {
                                     Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.onError)
                                 }
-                            }
+                            },
+                            modifier = Modifier.animateItem() // THIS FIXES THE SWIPE ANIMATION
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
@@ -872,6 +889,11 @@ override fun onDestroy() {
 @Deprecated("Deprecated in Java")
 @Suppress("DEPRECATION")
 override fun onBackPressed() {
+    if (isEditingUrl) {
+        isEditingUrl = false
+        hideKeyboard()
+        return
+    }
     if (showTabManager) { showTabManager = false; return }
     if (openFolder != null) { openFolder = null; return }
     if (showMainMenu) { showMainMenu = false; return }
@@ -909,7 +931,7 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
 
 private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-private fun updateButtons() { runOnUiThread { uiTabCount = (current + 1).coerceAtLeast(1) } }
+private fun updateButtons() { runOnUiThread { } } 
 private fun hideKeyboard() { val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager; imm.hideSoftInputFromWindow(geckoView.windowToken, 0) }
 
 private fun setFullscreen(on: Boolean) {
@@ -965,7 +987,7 @@ private fun selectTab(i: Int) {
     tabs.getOrNull(current)?.session?.let { if (it.isOpen) it.setActive(false) }
     current = i; val t = tabs[i]; val s = ensureSession(t)
     geckoView.releaseSession(); geckoView.setSession(s); s.setActive(true)
-    runOnUiThread { uiUrl = t.url; uiTabCount = current + 1 }; uiProgress = 0; uiIsLoading = false; updateButtons()
+    runOnUiThread { uiUrl = t.url }; uiProgress = 0; uiIsLoading = false; updateButtons()
 }
 
 private fun closeTab(i: Int) {
@@ -1043,7 +1065,6 @@ private fun recover(t: Tab) {
                             if (bitmap != null) {
                                 val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 3, bitmap.height / 3, true)
                                 tab.bitmap = scaled
-                                runOnUiThread { uiTabCount = tabs.size } 
                             }
                         }, { error -> })
                     } catch (e: Exception) {
