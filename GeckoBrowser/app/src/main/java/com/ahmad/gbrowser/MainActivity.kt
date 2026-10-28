@@ -134,10 +134,11 @@ class MainActivity : ComponentActivity() {
     
     private var showMainMenu by mutableStateOf(false)
     private var showContextMenu by mutableStateOf(false)
-    
-    // New Dialog States
     private var showAddonsDialog by mutableStateOf(false)
     private var showSearchEngineDialog by mutableStateOf(false)
+    
+    // Moved Folder State to Root Level to prevent crashes
+    private var openFolder by mutableStateOf<Shortcut?>(null)
 
     private var contextLink by mutableStateOf<String?>(null)
     private var contextText by mutableStateOf<String?>(null)
@@ -198,7 +199,7 @@ class MainActivity : ComponentActivity() {
                 surfaceVariant = ComposeColor(0xFF1E1E1E),
                 onSurface = ComposeColor(0xFFE6E1E5),
                 onSurfaceVariant = ComposeColor(0xFFCAC4D0),
-                outline = ComposeColor(0xFF938F99)
+                outline = ComposeColor(0xFF49454F)
             )
         } else {
             lightColorScheme(
@@ -219,6 +220,7 @@ class MainActivity : ComponentActivity() {
             if (showContextMenu) ContextMenuSheet()
             if (showAddonsDialog) AddonsDialog()
             if (showSearchEngineDialog) SearchEngineDialog()
+            if (openFolder != null) FolderDialog()
         }
     }
 
@@ -275,39 +277,8 @@ fun HomePage(onSearch: (String) -> Unit) {
         ))
     )) }
     
-    var openFolder by remember { mutableStateOf<Shortcut?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingShortcut by remember { mutableStateOf<Shortcut?>(null) }
-
-    // Render Folder as a Popup Dialog
-    if (openFolder != null) {
-        Dialog(onDismissRequest = { openFolder = null }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.padding(16.dp).wrapContentSize()
-            ) {
-                Column(modifier = Modifier.padding(24.dp).widthIn(min = 200.dp, max = 350.dp)) {
-                    Text(openFolder!!.name, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.CenterHorizontally))
-                    Spacer(modifier = Modifier.height(24.dp))
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.heightIn(max = 400.dp)
-                    ) {
-                        items(openFolder!!.items) { subItem ->
-                            QuickLink(
-                                name = subItem.name, 
-                                onClick = { onSearch(subItem.url); openFolder = null }, 
-                                onLongClick = { editingShortcut = subItem; openFolder = null }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -446,6 +417,42 @@ fun HomePage(onSearch: (String) -> Unit) {
     }
 }
 
+// NEW: Folder Dialog with Outline and Safe Dismiss
+@Composable
+fun FolderDialog() {
+    val folder = openFolder ?: return
+    Dialog(onDismissRequest = { openFolder = null }) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.padding(16.dp).wrapContentSize()
+        ) {
+            Column(modifier = Modifier.padding(24.dp).widthIn(min = 200.dp, max = 350.dp)) {
+                Text(folder.name, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Spacer(modifier = Modifier.height(24.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.heightIn(max = 400.dp)
+                ) {
+                    items(folder.items) { subItem ->
+                        QuickLink(
+                            name = subItem.name, 
+                            onClick = { 
+                                openFolder = null // Close dialog first to prevent crash
+                                go(subItem.url)
+                            }, 
+                            onLongClick = { /* Handle edit if needed */ }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderIcon(shortcut: Shortcut, onClick: () -> Unit, onLongClick: () -> Unit) {
@@ -549,7 +556,7 @@ fun BottomBar() {
 @Composable
 fun MainMenuSheet() {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    ModalBottomSheet(onDismissRequest = { showMainMenu = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surfaceVariant) {
+    ModalBottomSheet(onDismissRequest = { showMainMenu = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
             MenuItem(icon = Icons.Default.Add, text = "New Tab") { showMainMenu = false; newTab(HOME) }
             MenuItem(icon = Icons.Default.History, text = "History") { showMainMenu = false; showHistory() }
@@ -584,12 +591,20 @@ fun MainMenuSheet() {
     }
 }
 
+// NEW: Beautiful Pill-Shaped Menu Item
 @Composable
 fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = text, tint = MaterialTheme.colorScheme.onSurface)
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(text, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable { onClick() }
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = text, tint = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(text, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 
@@ -597,7 +612,7 @@ fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String
 @Composable
 fun ContextMenuSheet() {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    ModalBottomSheet(onDismissRequest = { showContextMenu = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surfaceVariant) {
+    ModalBottomSheet(onDismissRequest = { showContextMenu = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
             contextLink?.let { link ->
                 MenuItem(icon = Icons.Default.OpenInNew, text = "Open link in new tab") { showContextMenu = false; newTab(link) }
@@ -614,17 +629,15 @@ fun ContextMenuSheet() {
     }
 }
 
-// --- NEW MODERN DIALOGS ---
-
 @Composable
 fun ModernPillButton(text: String, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(50), // Fully rounded pill shape
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onClick() }
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onClick() }
     ) {
-        Text(text, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp)
+        Text(text, modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp)
     }
 }
 
@@ -634,10 +647,11 @@ fun AddonsDialog() {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.background,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             modifier = Modifier.padding(16.dp).wrapContentSize()
         ) {
             Column(modifier = Modifier.padding(24.dp).widthIn(min = 300.dp, max = 400.dp)) {
-                Text("Add-ons", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("Add-ons", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.CenterHorizontally))
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 ModernPillButton("＋ Recommended add-ons") {
@@ -663,10 +677,11 @@ fun SearchEngineDialog() {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.background,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             modifier = Modifier.padding(16.dp).wrapContentSize()
         ) {
             Column(modifier = Modifier.padding(24.dp).widthIn(min = 300.dp, max = 400.dp)) {
-                Text("Search Engine", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("Search Engine", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.CenterHorizontally))
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 store.engineNames.forEachIndexed { index, name ->
@@ -708,6 +723,7 @@ override fun onDestroy() {
 @Deprecated("Deprecated in Java")
 @Suppress("DEPRECATION")
 override fun onBackPressed() {
+    if (openFolder != null) { openFolder = null; return }
     if (showMainMenu) { showMainMenu = false; return }
     if (showContextMenu) { showContextMenu = false; return }
     if (showAddonsDialog) { showAddonsDialog = false; return }
