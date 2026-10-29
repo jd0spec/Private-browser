@@ -2,35 +2,107 @@
     if (window.__gbVideoInstalled) return;
     window.__gbVideoInstalled = true;
 
+    let port = null;
+    let activeVideo = null;
     let currentPill = null;
 
-    function createPill(videoUrl) {
+    // Connect to Kotlin (MainActivity)
+    try {
+        port = browser.runtime.connect("browser");
+        port.onMessage.addListener((msg) => {
+            if (!activeVideo) return;
+            if (msg.action === "play") activeVideo.play();
+            if (msg.action === "pause") activeVideo.pause();
+            if (msg.action === "seek") activeVideo.currentTime = msg.time;
+        });
+    } catch (e) {
+        console.log("GB Extension: Port connection failed", e);
+    }
+
+    function getVideoUrl(video) {
+        let url = video.currentSrc || video.src;
+        if (!url || url === "") {
+            const source = video.querySelector('source');
+            if (source) url = source.src;
+        }
+        return url;
+    }
+
+    // Create the Floating Pill
+    function showPill(video) {
         if (currentPill) currentPill.remove();
+        activeVideo = video;
 
         let pill = document.createElement("div");
         pill.className = "__gbPill";
         pill.innerHTML = `
+            <button class="__gbBtn" id="__gbPlay" title="Play/Pause">⏸</button>
+            <button class="__gbBtn" id="__gbPip" title="Popout">⛶</button>
+            <button class="__gbBtn" id="__gbNative" title="Custom Player">▶</button>
             <button class="__gbBtn" id="__gbDl" title="Download">⬇</button>
-            <button class="__gbBtn" id="__gbCopy" title="Copy Link">🔗</button>
         `;
         document.body.appendChild(pill);
         currentPill = pill;
 
-        pill.querySelector("#__gbDl").onclick = (e) => {
+        pill.querySelector("#__gbPlay").onclick = (e) => {
             e.stopPropagation();
-            browser.runtime.sendMessage("browser", { type: "DOWNLOAD_VIDEO", url: videoUrl });
+            video.paused ? video.play() : video.pause();
+            e.target.innerText = video.paused ? "⏸" : "▶";
         };
 
-        pill.querySelector("#__gbCopy").onclick = (e) => {
+        pill.querySelector("#__gbPip").onclick = (e) => {
             e.stopPropagation();
-            browser.runtime.sendMessage("browser", { type: "COPY_LINK", url: videoUrl });
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture();
+            } else if (video.requestPictureInPicture) {
+                video.requestPictureInPicture();
+            }
+        };
+
+        // THIS IS THE MAGIC BUTTON THAT OPENS YOUR CUSTOM PLAYER
+        pill.querySelector("#__gbNative").onclick = (e) => {
+            e.stopPropagation();
+            if (port) {
+                port.postMessage({ 
+                    type: "OPEN_NATIVE_PLAYER", 
+                    url: getVideoUrl(video),
+                    duration: video.duration || 0,
+                    currentTime: video.currentTime || 0,
+                    width: video.videoWidth || 0,
+                    height: video.videoHeight || 0
+                });
+            }
+        };
+
+        pill.querySelector("#__gbDl").onclick = (e) => {
+            e.stopPropagation();
+            let url = getVideoUrl(video);
+            if (!url.startsWith("blob:")) {
+                browser.runtime.sendMessage("browser", { type: "DOWNLOAD_VIDEO", url: url });
+            }
         };
     }
 
-    // Listen for the network sniffer to send us a URL
-    browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.type === "SHOW_SNIFFED_PILL") {
-            createPill(message.url);
+    // Global Play Detector
+    document.addEventListener('play', (e) => {
+        if (e.target && e.target.tagName === 'VIDEO') {
+            showPill(e.target);
         }
-    });
+    }, true);
+
+    // Hide pill when paused
+    document.addEventListener('pause', (e) => {
+        if (e.target && e.target.tagName === 'VIDEO') {
+            if (currentPill) {
+                currentPill.style.opacity = "0.3";
+                setTimeout(() => {
+                    if (e.target.paused && currentPill) {
+                        currentPill.remove();
+                        currentPill = null;
+                    }
+                }, 3000);
+            }
+        }
+    }, true);
+
 })();
