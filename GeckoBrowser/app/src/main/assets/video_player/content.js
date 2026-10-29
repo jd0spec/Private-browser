@@ -2,66 +2,79 @@
     if (window.__gbVideoInstalled) return;
     window.__gbVideoInstalled = true;
 
-    function attachSkin(video) {
-        if (video.__gbSkin) return;
-        video.__gbSkin = true;
-        
-        video.controls = false;
+    let currentPill = null;
 
-        let wrap = video.parentElement;
-        if (!wrap.classList.contains("__gbWrap")) {
-            let newWrap = document.createElement("div");
-            newWrap.className = "__gbWrap";
-            video.parentNode.insertBefore(newWrap, video);
-            newWrap.appendChild(video);
-            wrap = newWrap;
+    function createPill(video) {
+        if (currentPill) {
+            currentPill.remove();
         }
 
-        let bar = document.createElement("div");
-        bar.className = "__gbBar";
-        bar.innerHTML = `
-            <button class="__gbBtn" id="__gbPlay">▶</button>
-            <input type="range" class="__gbSeek" id="__gbSeek" min="0" max="1000" value="0"/>
-            <span class="__gbTime" id="__gbTime">0:00</span>
-            <button class="__gbDl" id="__gbDl">Download</button>
+        let pill = document.createElement("div");
+        pill.className = "__gbPill";
+        pill.innerHTML = `
+            <button class="__gbBtn" id="__gbDl" title="Download">⬇</button>
+            <button class="__gbBtn" id="__gbPip" title="Popout">⛶</button>
+            <button class="__gbBtn" id="__gbCopy" title="Copy Link">🔗</button>
         `;
-        wrap.appendChild(bar);
+        document.body.appendChild(pill);
+        currentPill = pill;
 
-        let playBtn = bar.querySelector("#__gbPlay");
-        let seek = bar.querySelector("#__gbSeek");
-        let time = bar.querySelector("#__gbTime");
-        let dlBtn = bar.querySelector("#__gbDl");
-
-        playBtn.onclick = () => video.paused ? video.play() : video.pause();
-        seek.oninput = () => { 
-            if(video.duration) video.currentTime = (seek.value / 1000) * video.duration; 
-        };
-        
-        dlBtn.onclick = () => { 
+        // Download Action
+        pill.querySelector("#__gbDl").onclick = (e) => {
+            e.stopPropagation();
             let url = video.currentSrc || video.src;
-            if(url.startsWith("blob:")) {
+            if (url.startsWith("blob:")) {
                 alert("This video is protected (DRM) and cannot be downloaded directly.");
             } else {
-                browser.runtime.sendMessage("browser", {
-                    type: "DOWNLOAD_VIDEO",
-                    url: url
-                });
+                browser.runtime.sendMessage("browser", { type: "DOWNLOAD_VIDEO", url: url });
             }
         };
 
-        video.addEventListener("timeupdate", () => {
-            if(video.duration) {
-                seek.value = Math.round((video.currentTime / video.duration) * 1000);
-                let m = Math.floor(video.currentTime / 60);
-                let s = Math.floor(video.currentTime % 60).toString().padStart(2, '0');
-                time.innerText = m + ":" + s;
+        // Picture-in-Picture Action
+        pill.querySelector("#__gbPip").onclick = (e) => {
+            e.stopPropagation();
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture();
+            } else if (video.requestPictureInPicture) {
+                video.requestPictureInPicture().catch(err => console.log(err));
             }
-        });
-        video.addEventListener("play", () => playBtn.innerText = "⏸");
-        video.addEventListener("pause", () => playBtn.innerText = "▶");
+        };
+
+        // Copy Link Action
+        pill.querySelector("#__gbCopy").onclick = (e) => {
+            e.stopPropagation();
+            let url = video.currentSrc || video.src;
+            browser.runtime.sendMessage("browser", { type: "COPY_LINK", url: url });
+        };
     }
 
-    document.querySelectorAll("video").forEach(attachSkin);
-    new MutationObserver(() => document.querySelectorAll("video").forEach(attachSkin))
+    function attachDetector(video) {
+        if (video.__gbDetected) return;
+        video.__gbDetected = true;
+
+        video.addEventListener("play", () => {
+            createPill(video);
+        });
+
+        video.addEventListener("pause", () => {
+            // Keep the pill visible for a few seconds after pausing, then hide
+            if (currentPill) {
+                currentPill.style.opacity = "0.5";
+                setTimeout(() => {
+                    if (video.paused && currentPill) {
+                        currentPill.remove();
+                        currentPill = null;
+                    }
+                }, 3000);
+            }
+        });
+        
+        video.addEventListener("playing", () => {
+            if (currentPill) currentPill.style.opacity = "1";
+        });
+    }
+
+    document.querySelectorAll("video").forEach(attachDetector);
+    new MutationObserver(() => document.querySelectorAll("video").forEach(attachDetector))
         .observe(document.body, {childList: true, subtree: true});
 })();
