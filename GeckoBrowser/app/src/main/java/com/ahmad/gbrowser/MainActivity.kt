@@ -131,11 +131,9 @@ class MainActivity : ComponentActivity() {
     rt = runtime!!
     rt.webExtensionController.setPromptDelegate(addonPrompt)
 
-    // NEW: Load the Video Player Extension
+    // Load the Video Player Extension
     rt.webExtensionController.install("resource://android/assets/video_player").accept({
-
     }, { error ->
-        
     })
 
     buildUi()
@@ -192,22 +190,11 @@ override fun onBackPressed() {
     val now = SystemClock.uptimeMillis()
     if (now - lastBack < 2000) exitApp() else { lastBack = now; toast("Press back again to exit") }
 }
+
 private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
 private fun toast(m: String) {
     runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-}
-
-private fun barButton(label: String, onClick: () -> Unit): TextView {
-    val tv = TextView(this)
-    tv.text = label
-    tv.textSize = 22f
-    tv.gravity = Gravity.CENTER
-    val out = TypedValue()
-    theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, out, true)
-    tv.setBackgroundResource(out.resourceId)
-    tv.setOnClickListener { onClick() }
-    return tv
 }
 
 private fun buildUi() {
@@ -536,133 +523,134 @@ private fun recover(t: Tab) {
         if (wasCurrent) selectTab(current)
     }
 }
-inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
-    private fun isCurrent() = curTab() === tab
+    inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
+        private fun isCurrent() = curTab() === tab
 
-    override fun onTitleChange(session: GeckoSession, title: String?) {
-        tab.title = title ?: ""
-        if (ch.screen == 1) syncTabs()
-    }
-
-    override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
-    override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
-    override fun onCrash(session: GeckoSession) { recover(tab) }
-    override fun onKill(session: GeckoSession) { recover(tab) }
-
-    override fun onCloseRequest(session: GeckoSession) {
-        runOnUiThread { val i = tabs.indexOf(tab); if (i >= 0) closeTab(i) }
-    }
-
-    override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
-        val link = element.linkUri
-        val img = element.srcUri
-        val list = ArrayList<CtxAction>()
-        if (link != null) {
-            list.add(CtxAction("+", "Open link in new tab") { newTab(link) })
-            list.add(CtxAction("\uD83D\uDD17", "Copy link") { copyText(link) })
-            list.add(CtxAction("Aa", "Copy text") { copyLinkText(element) })
+        override fun onTitleChange(session: GeckoSession, title: String?) {
+            tab.title = title ?: ""
+            if (ch.screen == 1) syncTabs()
         }
-        if (img != null) { list.add(CtxAction("\u25A3", "Open image/media in new tab") { newTab(img) }) }
-        if (list.isEmpty()) return
-        runOnUiThread { ch.ctxTitle = displayUrl(link ?: img ?: ""); ch.ctx = list }
+
+        override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
+        override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
+        override fun onCrash(session: GeckoSession) { recover(tab) }
+        override fun onKill(session: GeckoSession) { recover(tab) }
+
+        override fun onCloseRequest(session: GeckoSession) {
+            runOnUiThread { val i = tabs.indexOf(tab); if (i >= 0) closeTab(i) }
+        }
+
+        override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
+            val link = element.linkUri
+            val img = element.srcUri
+            val list = ArrayList<CtxAction>()
+            if (link != null) {
+                list.add(CtxAction("+", "Open link in new tab") { newTab(link) })
+                list.add(CtxAction("\uD83D\uDD17", "Copy link") { copyText(link) })
+                list.add(CtxAction("Aa", "Copy text") { copyLinkText(element) })
+            }
+            if (img != null) { list.add(CtxAction("\u25A3", "Open image/media in new tab") { newTab(img) }) }
+            if (list.isEmpty()) return
+            runOnUiThread { ch.ctxTitle = displayUrl(link ?: img ?: ""); ch.ctx = list }
+        }
+
+        override fun onPageStart(session: GeckoSession, url: String) { if (isCurrent()) ch.loading = 5 }
+        override fun onProgressChange(session: GeckoSession, p: Int) { if (isCurrent()) ch.loading = if (p in 1..99) p else 0 }
+
+        override fun onPageStop(session: GeckoSession, success: Boolean) {
+            if (isCurrent()) ch.loading = 0
+            if (success && tab.url.startsWith("http")) store.addVisit(tab.url, tab.title)
+            if (success && isCurrent()) { ui.postDelayed({ if (curTab() === tab && !tab.home && ch.screen == 0) captureThumb(tab) }, 900) }
+        }
+
+        override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+            tab.url = url ?: ""
+            if (isCurrent() && !tab.home) ch.url = tab.url
+        }
+
+        override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) { tab.canBack = canGoBack; if (isCurrent()) updateButtons() }
+        override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) { tab.canForward = canGoForward; if (isCurrent()) updateButtons() }
+
+        override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+            val u = request.uri
+            val scheme = u.substringBefore(':', "").lowercase()
+            if (scheme.isEmpty() || scheme in okSchemes) return null
+            openExternal(u)
+            return GeckoResult.fromValue(AllowOrDeny.DENY)
+        }
+
+        override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+            runOnUiThread { newTab(uri) }
+            return null
+        }
     }
 
-    override fun onPageStart(session: GeckoSession, url: String) { if (isCurrent()) ch.loading = 5 }
-    override fun onProgressChange(session: GeckoSession, p: Int) { if (isCurrent()) ch.loading = if (p in 1..99) p else 0 }
-
-    override fun onPageStop(session: GeckoSession, success: Boolean) {
-        if (isCurrent()) ch.loading = 0
-        if (success && tab.url.startsWith("http")) store.addVisit(tab.url, tab.title)
-        if (success && isCurrent()) { ui.postDelayed({ if (curTab() === tab && !tab.home && ch.screen == 0) captureThumb(tab) }, 900) }
-    }
-
-    override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
-        tab.url = url ?: ""
-        if (isCurrent() && !tab.home) ch.url = tab.url
-    }
-
-    override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) { tab.canBack = canGoBack; if (isCurrent()) updateButtons() }
-    override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) { tab.canForward = canGoForward; if (isCurrent()) updateButtons() }
-
-    override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
-        val u = request.uri
-        val scheme = u.substringBefore(':', "").lowercase()
-        if (scheme.isEmpty() || scheme in okSchemes) return null
-        openExternal(u)
-        return GeckoResult.fromValue(AllowOrDeny.DENY)
-    }
-
-    override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-        runOnUiThread { newTab(uri) }
-        return null
-    }
-}
-
-private fun openExternal(u: String) {
-    try {
-        val i = if (u.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(u))
-        i.addCategory(Intent.CATEGORY_BROWSABLE); i.component = null; i.selector = null; startActivity(i)
-    } catch (e: Exception) { toast("No app can open this link") }
-}
-
-private fun copyLinkText(element: GeckoSession.ContentDelegate.ContextElement) {
-    var text: String? = null
-    for (name in listOf("textContent", "title", "altText")) {
+    private fun openExternal(u: String) {
         try {
-            val v = element.javaClass.getField(name).get(element) as? String
-            if (!v.isNullOrBlank()) { text = v.trim(); break }
-        } catch (e: Exception) {}
+            val i = if (u.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(u))
+            i.addCategory(Intent.CATEGORY_BROWSABLE); i.component = null; i.selector = null; startActivity(i)
+        } catch (e: Exception) { toast("No app can open this link") }
     }
-    if (text == null) toast("No text found for this link") else copyText(text)
-}
 
-private fun copyText(s: String) {
-    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("link", s))
-    toast("Copied")
-}
-
-private fun addDownloadFromInput(input: String) {
-    val t = input.trim()
-    val url = if (t.contains("://")) t else "https://$t"
-    if (!url.startsWith("http")) { toast("Enter a web link"); return }
-    Dl.add(URLUtil.guessFileName(url, null, null), url, "")
-    toast("Download added")
-}
-
-private fun mimeOf(name: String): String = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "*/*"
-
-private fun openDownloaded(d: DlItem) {
-    try {
-        val i = Intent(Intent.ACTION_VIEW)
-        i.setDataAndType(Uri.parse(d.savedUri), mimeOf(d.name))
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        startActivity(i)
-    } catch (e: Exception) { toast("No app found to open this file") }
-}
-
-private fun shareDownloaded(d: DlItem) {
-    try {
-        val i = Intent(Intent.ACTION_SEND)
-        i.type = mimeOf(d.name)
-        i.putExtra(Intent.EXTRA_STREAM, Uri.parse(d.savedUri))
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        startActivity(Intent.createChooser(i, "Share file"))
-    } catch (e: Exception) { toast("Could not share this file") }
-}
-
-private fun handleDownload(r: WebResponse) {
-    val uri = r.uri
-    if (uri.contains(".xpi")) { runOnUiThread { installAddon(uri) }; return }
-    if (!uri.startsWith("http")) { toast("This kind of download is not supported yet"); return }
-    val ct = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
-    val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
-    val name = URLUtil.guessFileName(uri, cd, ct)
-    runOnUiThread {
-        val exists = Dl.items.any { it.state == DlState.DONE && (it.url == uri || it.name == name) }
-        DlPrompt.pending = PendingDl(name, uri, curTab()?.url ?: "", exists)
+    private fun copyLinkText(element: GeckoSession.ContentDelegate.ContextElement) {
+        var text: String? = null
+        for (name in listOf("textContent", "title", "altText")) {
+            try {
+                val v = element.javaClass.getField(name).get(element) as? String
+                if (!v.isNullOrBlank()) { text = v.trim(); break }
+            } catch (e: Exception) {}
+        }
+        if (text == null) toast("No text found for this link") else copyText(text)
     }
-}
+
+    private fun copyText(s: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("link", s))
+        toast("Copied")
+    }
+
+    private fun addDownloadFromInput(input: String) {
+        val t = input.trim()
+        val url = if (t.contains("://")) t else "https://$t"
+        if (!url.startsWith("http")) { toast("Enter a web link"); return }
+        Dl.add(URLUtil.guessFileName(url, null, null), url, "")
+        toast("Download added")
+    }
+
+    private fun mimeOf(name: String): String = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "*/*"
+
+    private fun openDownloaded(d: DlItem) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW)
+            i.setDataAndType(Uri.parse(d.savedUri), mimeOf(d.name))
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(i)
+        } catch (e: Exception) { toast("No app found to open this file") }
+    }
+
+    private fun shareDownloaded(d: DlItem) {
+        try {
+            val i = Intent(Intent.ACTION_SEND)
+            i.type = mimeOf(d.name)
+            i.putExtra(Intent.EXTRA_STREAM, Uri.parse(d.savedUri))
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(Intent.createChooser(i, "Share file"))
+        } catch (e: Exception) { toast("Could not share this file") }
+    }
+
+    private fun handleDownload(r: WebResponse) {
+        val uri = r.uri
+        if (uri.contains(".xpi")) { runOnUiThread { installAddon(uri) }; return }
+        if (!uri.startsWith("http")) { toast("This kind of download is not supported yet"); return }
+        val ct = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
+        val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
+        val name = URLUtil.guessFileName(uri, cd, ct)
+        runOnUiThread {
+            val exists = Dl.items.any { it.state == DlState.DONE && (it.url == uri || it.name == name) }
+            DlPrompt.pending = PendingDl(name, uri, curTab()?.url ?: "", exists)
+        }
+    }
+
     private fun showTabs() {
         val cur = curTab()
         if (cur != null && !cur.home) captureThumb(cur)
@@ -716,7 +704,7 @@ private fun handleDownload(r: WebResponse) {
                         e.setActionDelegate(actionDelegate)
                         e.tabDelegate = extTabDelegate
                         
-                        // NEW: Attach message delegate for the video extension
+                        // Attach message delegate for the video extension
                         if (e.id == "video_player@ahmad.gbrowser") {
                             e.setMessageDelegate(extMessageDelegate, "browser")
                         }
@@ -730,18 +718,25 @@ private fun handleDownload(r: WebResponse) {
         }, { })
     }
 
-    // NEW: Video Extension Message Delegate
+    // Handles messages from the video extension (Download & Copy Link)
     private val extMessageDelegate = object : WebExtension.MessageDelegate {
         override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
             if (message is JSONObject) {
                 val type = message.optString("type")
-                if (type == "DOWNLOAD_VIDEO") {
-                    val url = message.optString("url")
-                    if (url.isNotEmpty()) {
-                        runOnUiThread {
-                            val name = URLUtil.guessFileName(url, null, "video/mp4")
-                            Dl.add(name, url, curTab()?.url ?: "")
-                            toast("Download started: $name")
+                val url = message.optString("url")
+                
+                if (url.isNotEmpty()) {
+                    runOnUiThread {
+                        when (type) {
+                            "DOWNLOAD_VIDEO" -> {
+                                val name = URLUtil.guessFileName(url, null, "video/mp4")
+                                Dl.add(name, url, curTab()?.url ?: "")
+                                toast("Download started: $name")
+                            }
+                            "COPY_LINK" -> {
+                                copyText(url)
+                                toast("Video link copied!")
+                            }
                         }
                     }
                 }
@@ -943,7 +938,7 @@ private fun handleDownload(r: WebResponse) {
         }.start()
     }
 
-    private fun installAddon(uri: String) {
+        private fun installAddon(uri: String) {
         rt.webExtensionController.install(uri).accept({ ext ->
             toast("Installed " + (ext?.metaData?.name ?: "add-on"))
             refreshAddonInfo()
