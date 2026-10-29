@@ -147,7 +147,8 @@ class MainActivity : ComponentActivity() {
     rt.webExtensionController.ensureBuiltIn("resource://android/assets/video_player", "video_player@ahmad.gbrowser").accept({
     toast("Extension Installed Successfully!")
 }, { error ->
-    toast("Extension Failed: $error")
+    // Let's print the exact error to the screen
+    toast("Extension Failed: ${error?.localizedMessage ?: error.toString()}")
 })
 
     buildUi()
