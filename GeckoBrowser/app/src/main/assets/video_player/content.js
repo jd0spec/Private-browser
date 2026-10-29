@@ -1,12 +1,13 @@
 (function() {
     if (window.__gbVideoInstalled) return;
     window.__gbVideoInstalled = true;
+    console.log("GB Extension: Loaded");
 
     let port = null;
     let activeVideo = null;
     let currentPill = null;
 
-    // Connect to Kotlin (MainActivity)
+    // Connect to Kotlin
     try {
         port = browser.runtime.connect("browser");
         port.onMessage.addListener((msg) => {
@@ -28,7 +29,6 @@
         return url;
     }
 
-    // Create the Floating Pill
     function showPill(video) {
         if (currentPill) currentPill.remove();
         activeVideo = video;
@@ -59,7 +59,7 @@
             }
         };
 
-        // THIS IS THE MAGIC BUTTON THAT OPENS YOUR CUSTOM PLAYER
+        // OPENS YOUR NATIVE MATERIAL 3 PLAYER
         pill.querySelector("#__gbNative").onclick = (e) => {
             e.stopPropagation();
             if (port) {
@@ -104,5 +104,4 @@
             }
         }
     }, true);
-
 })();
