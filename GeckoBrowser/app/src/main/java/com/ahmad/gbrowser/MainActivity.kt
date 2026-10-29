@@ -8,6 +8,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
@@ -39,6 +40,9 @@ import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -82,6 +86,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var overlayView: ComposeView
     private lateinit var topBar: View
     private lateinit var bottomBar: View
+    private lateinit var videoOverlayView: ComposeView
 
     private val tabs = ArrayList<Tab>()
     private var current = -1
@@ -96,6 +101,14 @@ class MainActivity : ComponentActivity() {
     private var popupExtId: String? = null
     private val actions = HashMap<String, WebExtension.Action>()
     private var popupAsked = false
+
+    // Native Video Player State
+    private var showNativePlayer by mutableStateOf(false)
+    private var isVideoPlaying by mutableStateOf(false)
+    private var videoCurrentTime by mutableStateOf(0f)
+    private var videoDuration by mutableStateOf(0f)
+    private var videoUrl by mutableStateOf("")
+    private var videoPort: WebExtension.Port? = null
 
     private val dataLabels = arrayOf("History", "Cookies & site data", "Open tabs", "Cache")
     private val autoKeys = arrayOf("ac_history", "ac_cookies", "ac_tabs", "ac_cache")
@@ -131,10 +144,7 @@ class MainActivity : ComponentActivity() {
     rt = runtime!!
     rt.webExtensionController.setPromptDelegate(addonPrompt)
 
-    // Load the Video Player Extension
-    rt.webExtensionController.install("resource://android/assets/video_player").accept({
-    }, { error ->
-    })
+    rt.webExtensionController.install("resource://android/assets/video_player").accept({}, {})
 
     buildUi()
 
@@ -179,6 +189,12 @@ override fun onDestroy() {
 @Deprecated("Deprecated in Java")
 @Suppress("DEPRECATION")
 override fun onBackPressed() {
+    if (showNativePlayer) { 
+        showNativePlayer = false
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        setFullscreen(false)
+        return 
+    }
     if (popup.session != null) { closePopup(); return }
     if (ch.editing) { ch.editing = false; hideKeyboard(); return }
     if (ch.screen != 0) { showScreen(0); return }
@@ -192,25 +208,18 @@ override fun onBackPressed() {
 }
 
 private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-private fun toast(m: String) {
-    runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
-}
+private fun toast(m: String) { runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_LONG).show() } }
 
 private fun buildUi() {
     val match = ViewGroup.LayoutParams.MATCH_PARENT
     val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
-
     val root = LinearLayout(this)
     root.orientation = LinearLayout.VERTICAL
-
     topBar = View(this)
 
     geckoView = GeckoView(this)
     homeView = ComposeView(this)
-    homeView.setContent {
-        AppTheme { if (ch.home) HomeScreen(store, onGo = { go(it) }) }
-    }
+    homeView.setContent { AppTheme { if (ch.home) HomeScreen(store, onGo = { go(it) }) } }
     val frame = FrameLayout(this)
     frame.addView(geckoView, FrameLayout.LayoutParams(match, match))
     frame.addView(homeView, FrameLayout.LayoutParams(match, match))
@@ -219,26 +228,9 @@ private fun buildUi() {
     val bottom = ComposeView(this)
     bottom.setContent {
         AppTheme {
-            BottomBar(
-                ch,
-                onGo = { go(it) },
-                onHome = { goHome() },
-                onTabs = { showTabs() },
-                onMenu = { showMenu() },
-                onSwipeLeft = { swipeNext() },
-                onSwipeRight = { swipePrev() }
-            )
+            BottomBar(ch, onGo = { go(it) }, onHome = { goHome() }, onTabs = { showTabs() }, onMenu = { showMenu() }, onSwipeLeft = { swipeNext() }, onSwipeRight = { swipePrev() })
             if (ch.menu) {
-                MenuSheet(
-                    ch,
-                    onBack = { curTab()?.session?.goBack(true) },
-                    onForward = { curTab()?.session?.goForward(true) },
-                    onHome = { goHome() },
-                    onReload = { curTab()?.session?.reload(GeckoSession.LOAD_FLAGS_NONE) },
-                    onAction = { menuAction(it) },
-                    onAddonSettings = { u -> if (u.isNullOrEmpty()) toast("This extension has no settings page") else newTab(u) },
-                    onAddonClick = { addonClick(it) }
-                )
+                MenuSheet(ch, onBack = { curTab()?.session?.goBack(true) }, onForward = { curTab()?.session?.goForward(true) }, onHome = { goHome() }, onReload = { curTab()?.session?.reload(GeckoSession.LOAD_FLAGS_NONE) }, onAction = { menuAction(it) }, onAddonSettings = { u -> if (u.isNullOrEmpty()) toast("This extension has no settings page") else newTab(u) }, onAddonClick = { addonClick(it) })
             }
             ch.ctx?.let { ContextSheet(ch, it) }
         }
@@ -260,21 +252,41 @@ private fun buildUi() {
             }
         }
     }
+    
     popupView = ComposeView(this)
     popupView.visibility = View.GONE
-    popupView.setContent {
-        AppTheme { ExtensionPopupWindow(popup, onClose = { closePopup() }) }
+    popupView.setContent { AppTheme { ExtensionPopupWindow(popup, onClose = { closePopup() }) } }
+    
+    videoOverlayView = ComposeView(this)
+    videoOverlayView.visibility = View.GONE
+    videoOverlayView.setContent {
+        AppTheme {
+            if (showNativePlayer) {
+                NativeVideoOverlay(
+                    isPlaying = isVideoPlaying, currentTime = videoCurrentTime, duration = videoDuration,
+                    onPlayPause = { videoPort?.postMessage(JSONObject().put("action", if (isVideoPlaying) "pause" else "play")) },
+                    onSeek = { time -> videoPort?.postMessage(JSONObject().put("action", "seek").put("time", time)) },
+                    onDownload = { if (videoUrl.isNotEmpty()) { Dl.add(URLUtil.guessFileName(videoUrl, null, "video/mp4"), videoUrl, curTab()?.url ?: ""); toast("Download started") } },
+                    onClose = { 
+                        showNativePlayer = false
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        setFullscreen(false)
+                        videoOverlayView.visibility = View.GONE
+                        videoPort?.postMessage(JSONObject().put("action", "pause"))
+                    }
+                )
+            }
+        }
     }
+
     val outer = FrameLayout(this)
     outer.addView(root, FrameLayout.LayoutParams(match, match))
     outer.addView(overlayView, FrameLayout.LayoutParams(match, match))
     outer.addView(popupView, FrameLayout.LayoutParams(match, match))
+    outer.addView(videoOverlayView, FrameLayout.LayoutParams(match, match))
+    
     val promptView = ComposeView(this)
-    promptView.setContent {
-        AppTheme {
-            DownloadPromptHost(onCopy = { copyText(it) }, onStarted = { toast("Downloading $it") })
-        }
-    }
+    promptView.setContent { AppTheme { DownloadPromptHost(onCopy = { copyText(it) }, onStarted = { toast("Downloading $it") }) } }
     outer.addView(promptView, FrameLayout.LayoutParams(1, 1))
     setContentView(outer)
 }
@@ -426,7 +438,6 @@ private fun selectTab(i: Int) {
     ch.loading = 0
     updateButtons()
 }
-
 private fun closeTab(i: Int) { removeTab(i, true) }
 
 private var undoTab: Tab? = null
@@ -523,6 +534,27 @@ private fun recover(t: Tab) {
         if (wasCurrent) selectTab(current)
     }
 }
+
+private fun showTabs() {
+    val cur = curTab()
+    if (cur != null && !cur.home) captureThumb(cur)
+    syncTabs()
+    showScreen(1)
+}
+
+private fun showScreen(n: Int) {
+    if (n != 1) { finalizeUndo(); ch.undoTitle = null }
+    ch.screen = n
+    overlayView.visibility = if (n == 0) View.GONE else View.VISIBLE
+    if (n == 2) ch.historyVersion++
+    if (n == 3) { for (k in 0 until 4) ch.autoFlags[k] = store.flag(autoKeys[k]); ch.engineIndex = store.engineIndex() }
+}
+
+private fun syncTabs() {
+    ch.tabList.clear()
+    for (t in tabs) ch.tabList.add(TabInfo(t.id, t.title, t.url, t.home, t.thumb))
+    ch.tabIndex = current
+}
     inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
         private fun isCurrent() = curTab() === tab
 
@@ -583,6 +615,96 @@ private fun recover(t: Tab) {
             runOnUiThread { newTab(uri) }
             return null
         }
+    }
+
+    private val extMessageDelegate = object : WebExtension.MessageDelegate {
+        override fun onConnect(port: WebExtension.Port) {
+            if (port.name == "browser") {
+                videoPort = port
+                port.setDelegate(object : WebExtension.PortDelegate {
+                    override fun onPortMessage(message: Any, port: WebExtension.Port) {
+                        if (message is JSONObject) {
+                            runOnUiThread {
+                                val type = message.optString("type")
+                                when (type) {
+                                    "OPEN_NATIVE_PLAYER" -> {
+                                        videoUrl = message.optString("url")
+                                        videoDuration = message.optDouble("duration", 0.0).toFloat()
+                                        videoCurrentTime = message.optDouble("currentTime", 0.0).toFloat()
+                                        
+                                        val w = message.optInt("width", 0)
+                                        val h = message.optInt("height", 0)
+                                        if (w > 0 && h > 0) {
+                                            requestedOrientation = if (w > h) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                                        } else {
+                                            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                        }
+                                        
+                                        showNativePlayer = true
+                                        isVideoPlaying = true
+                                        setFullscreen(true) // Hides site UI completely
+                                        videoOverlayView.visibility = View.VISIBLE
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    override fun onPortDisconnect(port: WebExtension.Port) { videoPort = null }
+                })
+            }
+        }
+        override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? = null
+    }
+
+    private val actionDelegate = object : WebExtension.ActionDelegate {
+        override fun onBrowserAction(extension: WebExtension, session: GeckoSession?, action: WebExtension.Action) {
+            if (session == null || !actions.containsKey(extension.id)) actions[extension.id] = action
+        }
+        override fun onTogglePopup(extension: WebExtension, action: WebExtension.Action): GeckoResult<GeckoSession>? = openPopupFor(extension, true)
+        override fun onOpenPopup(extension: WebExtension, action: WebExtension.Action): GeckoResult<GeckoSession>? = openPopupFor(extension, false)
+    }
+
+    private val extTabDelegate = object : WebExtension.TabDelegate {
+        override fun onNewTab(source: WebExtension, createDetails: WebExtension.CreateTabDetails): GeckoResult<GeckoSession>? {
+            val u = createDetails.url
+            if (!u.isNullOrEmpty()) { closePopup(); newTab(u) }
+            return null
+        }
+        override fun onOpenOptionsPage(source: WebExtension) {
+            val u = source.metaData?.optionsPageUrl
+            if (!u.isNullOrEmpty()) { closePopup(); newTab(u) }
+        }
+    }
+
+    private inner class PopupDelegates : GeckoSession.ContentDelegate {
+        override fun onCloseRequest(session: GeckoSession) { runOnUiThread { if (popup.session === session) closePopup() } }
+        override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
+    }
+
+    private fun openPopupFor(ext: WebExtension, toggle: Boolean): GeckoResult<GeckoSession>? {
+        popupAsked = true
+        if (toggle && popup.session != null && popupExtId == ext.id) { closePopup(); return null }
+        closePopup()
+        val s = GeckoSession()
+        s.contentDelegate = PopupDelegates()
+        s.promptDelegate = prompts
+        popupExtId = ext.id
+        popup.title = ext.metaData?.name ?: ""
+        popup.session = s
+        popupView.visibility = View.VISIBLE
+        ui.postDelayed({
+            if (popup.session === s && !s.isOpen) { try { s.open(rt) } catch (e: Exception) {} }
+        }, 250)
+        return GeckoResult.fromValue(s)
+    }
+
+    private fun closePopup() {
+        val s = popup.session
+        popup.session = null; popupExtId = null
+        try { popup.gecko?.releaseSession() } catch (e: Exception) {}
+        popup.gecko = null
+        try { s?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
+        popupView.visibility = View.GONE
     }
 
     private fun openExternal(u: String) {
@@ -651,27 +773,6 @@ private fun recover(t: Tab) {
         }
     }
 
-    private fun showTabs() {
-        val cur = curTab()
-        if (cur != null && !cur.home) captureThumb(cur)
-        syncTabs()
-        showScreen(1)
-    }
-
-    private fun showScreen(n: Int) {
-        if (n != 1) { finalizeUndo(); ch.undoTitle = null }
-        ch.screen = n
-        overlayView.visibility = if (n == 0) View.GONE else View.VISIBLE
-        if (n == 2) ch.historyVersion++
-        if (n == 3) { for (k in 0 until 4) ch.autoFlags[k] = store.flag(autoKeys[k]); ch.engineIndex = store.engineIndex() }
-    }
-
-    private fun syncTabs() {
-        ch.tabList.clear()
-        for (t in tabs) ch.tabList.add(TabInfo(t.id, t.title, t.url, t.home, t.thumb))
-        ch.tabIndex = current
-    }
-
     private val addonExts = ArrayList<WebExtension>()
 
     private fun loadAddonIcon(idx: Int, e: WebExtension) {
@@ -703,12 +804,9 @@ private fun recover(t: Tab) {
                         addonExts.add(e)
                         e.setActionDelegate(actionDelegate)
                         e.tabDelegate = extTabDelegate
-                        
-                        // Attach message delegate for the video extension
                         if (e.id == "video_player@ahmad.gbrowser") {
                             e.setMessageDelegate(extMessageDelegate, "browser")
                         }
-                        
                         val m = e.metaData
                         ch.addons.add(AddonInfo(m?.name ?: e.id, m?.optionsPageUrl, m?.version ?: "", m?.enabled ?: true))
                         loadAddonIcon(addonExts.size - 1, e)
@@ -716,84 +814,6 @@ private fun recover(t: Tab) {
                 }
             }
         }, { })
-    }
-
-    // Handles messages from the video extension (Download & Copy Link)
-    private val extMessageDelegate = object : WebExtension.MessageDelegate {
-        override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
-            if (message is JSONObject) {
-                val type = message.optString("type")
-                val url = message.optString("url")
-                
-                if (url.isNotEmpty()) {
-                    runOnUiThread {
-                        when (type) {
-                            "DOWNLOAD_VIDEO" -> {
-                                val name = URLUtil.guessFileName(url, null, "video/mp4")
-                                Dl.add(name, url, curTab()?.url ?: "")
-                                toast("Download started: $name")
-                            }
-                            "COPY_LINK" -> {
-                                copyText(url)
-                                toast("Video link copied!")
-                            }
-                        }
-                    }
-                }
-            }
-            return null
-        }
-    }
-
-    private val actionDelegate = object : WebExtension.ActionDelegate {
-        override fun onBrowserAction(extension: WebExtension, session: GeckoSession?, action: WebExtension.Action) {
-            if (session == null || !actions.containsKey(extension.id)) actions[extension.id] = action
-        }
-        override fun onTogglePopup(extension: WebExtension, action: WebExtension.Action): GeckoResult<GeckoSession>? = openPopupFor(extension, true)
-        override fun onOpenPopup(extension: WebExtension, action: WebExtension.Action): GeckoResult<GeckoSession>? = openPopupFor(extension, false)
-    }
-
-    private val extTabDelegate = object : WebExtension.TabDelegate {
-        override fun onNewTab(source: WebExtension, createDetails: WebExtension.CreateTabDetails): GeckoResult<GeckoSession>? {
-            val u = createDetails.url
-            if (!u.isNullOrEmpty()) { closePopup(); newTab(u) }
-            return null
-        }
-        override fun onOpenOptionsPage(source: WebExtension) {
-            val u = source.metaData?.optionsPageUrl
-            if (!u.isNullOrEmpty()) { closePopup(); newTab(u) }
-        }
-    }
-
-    private inner class PopupDelegates : GeckoSession.ContentDelegate {
-        override fun onCloseRequest(session: GeckoSession) { runOnUiThread { if (popup.session === session) closePopup() } }
-        override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
-    }
-
-    private fun openPopupFor(ext: WebExtension, toggle: Boolean): GeckoResult<GeckoSession>? {
-        popupAsked = true
-        if (toggle && popup.session != null && popupExtId == ext.id) { closePopup(); return null }
-        closePopup()
-        val s = GeckoSession()
-        s.contentDelegate = PopupDelegates()
-        s.promptDelegate = prompts
-        popupExtId = ext.id
-        popup.title = ext.metaData?.name ?: ""
-        popup.session = s
-        popupView.visibility = View.VISIBLE
-        ui.postDelayed({
-            if (popup.session === s && !s.isOpen) { try { s.open(rt) } catch (e: Exception) {} }
-        }, 250)
-        return GeckoResult.fromValue(s)
-    }
-
-    private fun closePopup() {
-        val s = popup.session
-        popup.session = null; popupExtId = null
-        try { popup.gecko?.releaseSession() } catch (e: Exception) {}
-        popup.gecko = null
-        try { s?.let { if (it.isOpen) it.close() } } catch (e: Exception) {}
-        popupView.visibility = View.GONE
     }
 
     private fun addonClick(i: Int) {
@@ -919,6 +939,7 @@ private fun recover(t: Tab) {
         @Suppress("DEPRECATION") startActivityForResult(i, REQ_XPI)
     }
 
+    
     private fun installFromInput(raw: String) {
         val t = raw.trim(); if (t.isEmpty()) return
         if (t.contains(".xpi")) { installAddon(t); return }
@@ -938,7 +959,7 @@ private fun recover(t: Tab) {
         }.start()
     }
 
-        private fun installAddon(uri: String) {
+    private fun installAddon(uri: String) {
         rt.webExtensionController.install(uri).accept({ ext ->
             toast("Installed " + (ext?.metaData?.name ?: "add-on"))
             refreshAddonInfo()
