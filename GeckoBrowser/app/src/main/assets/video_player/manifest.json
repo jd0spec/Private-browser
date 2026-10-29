@@ -1,23 +1,17 @@
 {
   "manifest_version": 2,
   "name": "Synced Video Player",
-  "version": "6.0",
+  "version": "1.0",
   "browser_specific_settings": {
     "gecko": {
-      "id": "video_player@ahmad.gbrowser",
-      "strict_min_version": "115.0"
+      "id": "video_player@ahmad.gbrowser"
     }
   },
-  "permissions": [
-    "<all_urls>"
-  ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "css": ["style.css"],
-      "all_frames": true,
-      "run_at": "document_start"
+      "css": ["style.css"]
     }
   ]
 }
