@@ -1,12 +1,13 @@
 (function() {
     if (window.__gbVideoInstalled) return;
     window.__gbVideoInstalled = true;
+    console.log("GB Extension: Script Injected Successfully!");
 
     let port = null;
     let activeVideo = null;
     let currentPill = null;
 
-    // 1. Connect to Kotlin
+    // FIX: Use standard connect, not connectNative
     try {
         port = browser.runtime.connect({ name: "browser" });
         port.onMessage.addListener((msg) => {
@@ -15,7 +16,7 @@
             if (msg.action === "pause") activeVideo.pause();
             if (msg.action === "seek") activeVideo.currentTime = msg.time;
         });
-        port.postMessage({ type: "PING" }); // Ping Kotlin to test connection
+        port.postMessage({ type: "PING" }); 
     } catch (e) {
         console.log("GB Extension Port Failed: ", e);
     }
@@ -77,19 +78,17 @@
             e.stopPropagation();
             let url = getVideoUrl(video);
             if (!url.startsWith("blob:")) {
-                browser.runtime.sendMessage("browser", { type: "DOWNLOAD_VIDEO", url: url });
+                port.postMessage({ type: "DOWNLOAD_VIDEO", url: url });
             }
         };
     }
 
-    // Global Play Detector
     document.addEventListener('play', (e) => {
         if (e.target && e.target.tagName === 'VIDEO') {
             showPill(e.target);
         }
     }, true);
 
-    // Hide pill when paused
     document.addEventListener('pause', (e) => {
         if (e.target && e.target.tagName === 'VIDEO') {
             if (currentPill) {
