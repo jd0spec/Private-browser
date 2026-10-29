@@ -164,11 +164,11 @@ class Prompts(private val act: MainActivity) : PromptDelegate {
         val clip = data.clipData
         if (clip != null && clip.itemCount > 0) {
             val uris = Array<Uri>(clip.itemCount) { clip.getItemAt(it).uri }
-            if (p.type == PromptDelegate.FilePrompt.Type.MULTIPLE) r.complete(p.confirm(act as android.content.Context, uris))
-            else r.complete(p.confirm(act as android.content.Context, uris[0]))
+            if (p.type == PromptDelegate.FilePrompt.Type.MULTIPLE) r.complete(p.confirm(act, uris))
+            else r.complete(p.confirm(act, uris[0]))
         } else {
             val u = data.data
-            if (u != null) r.complete(p.confirm(act as android.content.Context, u)) else r.complete(p.dismiss())
+            if (u != null) r.complete(p.confirm(act, u)) else r.complete(p.dismiss())
         }
     }
 }

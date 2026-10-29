@@ -83,4 +83,61 @@ class Store(ctx: Context) {
     }
 
     fun searchUrl(): String = engineUrls[engineIndex()]
+
+    // ---------- home screen shortcuts & folders ----------
+    fun loadHome(): MutableList<HomeItem> {
+        val out = ArrayList<HomeItem>()
+        val raw = prefs.getString("home_items", null)
+        if (raw == null) {
+            val defaults = listOf(
+                "YouTube" to "https://m.youtube.com",
+                "Google" to "https://www.google.com",
+                "Wikipedia" to "https://www.wikipedia.org",
+                "GitHub" to "https://github.com",
+                "Telegram" to "https://web.telegram.org/a/",
+                "Gmail" to "https://mail.google.com"
+            )
+            defaults.forEachIndexed { i, d -> out.add(HomeItem("d$i", false, d.first, d.second, "")) }
+            return out
+        }
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    HomeItem(
+                        o.getString("id"), o.optBoolean("f"), o.optString("t"),
+                        o.optString("u"), o.optString("p")
+                    )
+                )
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    fun saveHome(list: List<HomeItem>) {
+        val arr = JSONArray()
+        for (h in list) {
+            arr.put(
+                JSONObject().put("id", h.id).put("f", h.folder).put("t", h.title)
+                    .put("u", h.url).put("p", h.parent)
+            )
+        }
+        prefs.edit().putString("home_items", arr.toString()).apply()
+    }
+
+    fun showRecent(): Boolean = prefs.getBoolean("show_recent", false)
+    fun setShowRecent(v: Boolean) {
+        prefs.edit().putBoolean("show_recent", v).apply()
+    }
 }
+
+/** One thing on the home screen: either a site shortcut or a folder. parent = "" means top level. */
+data class HomeItem(
+    val id: String,
+    val folder: Boolean,
+    val title: String,
+    val url: String,
+    val parent: String
+)
