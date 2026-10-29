@@ -649,7 +649,7 @@ private fun syncTabs() {
                             }
                         }
                     }
-                    override fun onPortDisconnect(port: WebExtension.Port) { videoPort = null }
+                
                 })
             }
         }
