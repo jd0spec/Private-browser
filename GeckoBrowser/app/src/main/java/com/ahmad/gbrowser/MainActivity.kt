@@ -143,7 +143,11 @@ class MainActivity : ComponentActivity() {
     rt = runtime!!
     rt.webExtensionController.setPromptDelegate(addonPrompt)
 
-    rt.webExtensionController.install("resource://android/assets/video_player").accept({}, {})
+    rt.webExtensionController.install("resource://android/assets/video_player").accept({
+        toast("Extension Installed Successfully!")
+    }, { error ->
+        toast("Extension Failed to Install: $error")
+    })
 
     buildUi()
 
@@ -615,13 +619,16 @@ inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, G
         override fun onConnect(port: WebExtension.Port) {
             if (port.name == "browser") {
                 videoPort = port
-                toast("Video Extension Connected!")
+                toast("JS Bridge Connected!")
                 port.setDelegate(object : WebExtension.PortDelegate {
                     override fun onPortMessage(message: Any, port: WebExtension.Port) {
                         if (message is JSONObject) {
                             runOnUiThread {
                                 val type = message.optString("type")
                                 when (type) {
+                                    "PING" -> {
+                                        toast("JS to Kotlin bridge is working!")
+                                    }
                                     "OPEN_NATIVE_PLAYER" -> {
                                         videoUrl = message.optString("url")
                                         videoDuration = message.optDouble("duration", 0.0).toFloat()
