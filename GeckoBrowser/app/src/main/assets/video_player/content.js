@@ -1,23 +1,23 @@
 (function() {
     if (window.__gbVideoInstalled) return;
     window.__gbVideoInstalled = true;
-    console.log("GB Extension: Loaded");
 
     let port = null;
     let activeVideo = null;
     let currentPill = null;
 
-    // Connect to Kotlin
+    // 1. Connect to Kotlin
     try {
-        port = browser.runtime.connect("browser");
+        port = browser.runtime.connect({ name: "browser" });
         port.onMessage.addListener((msg) => {
             if (!activeVideo) return;
             if (msg.action === "play") activeVideo.play();
             if (msg.action === "pause") activeVideo.pause();
             if (msg.action === "seek") activeVideo.currentTime = msg.time;
         });
+        port.postMessage({ type: "PING" }); // Ping Kotlin to test connection
     } catch (e) {
-        console.log("GB Extension: Port connection failed", e);
+        console.log("GB Extension Port Failed: ", e);
     }
 
     function getVideoUrl(video) {
@@ -59,7 +59,6 @@
             }
         };
 
-        // OPENS YOUR NATIVE MATERIAL 3 PLAYER
         pill.querySelector("#__gbNative").onclick = (e) => {
             e.stopPropagation();
             if (port) {
