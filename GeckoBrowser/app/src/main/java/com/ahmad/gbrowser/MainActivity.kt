@@ -102,7 +102,6 @@ class MainActivity : ComponentActivity() {
     private val actions = HashMap<String, WebExtension.Action>()
     private var popupAsked = false
 
-    // Native Video Player State
     private var showNativePlayer by mutableStateOf(false)
     private var isVideoPlaying by mutableStateOf(false)
     private var videoCurrentTime by mutableStateOf(0f)
@@ -159,10 +158,7 @@ class MainActivity : ComponentActivity() {
     refreshAddonInfo()
 }
 
-override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    handleIntent(intent)
-}
+override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleIntent(intent) }
 
 private fun handleIntent(i: Intent?) {
     if (i?.action == Intent.ACTION_VIEW) {
@@ -171,10 +167,7 @@ private fun handleIntent(i: Intent?) {
     }
 }
 
-override fun onStop() {
-    super.onStop()
-    if (!skipSave) saveTabs()
-}
+override fun onStop() { super.onStop(); if (!skipSave) saveTabs() }
 
 override fun onDestroy() {
     try { closePopup() } catch (e: Exception) {}
@@ -193,6 +186,7 @@ override fun onBackPressed() {
         showNativePlayer = false
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         setFullscreen(false)
+        videoOverlayView.visibility = View.GONE
         return 
     }
     if (popup.session != null) { closePopup(); return }
@@ -555,72 +549,73 @@ private fun syncTabs() {
     for (t in tabs) ch.tabList.add(TabInfo(t.id, t.title, t.url, t.home, t.thumb))
     ch.tabIndex = current
 }
-    inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
-        private fun isCurrent() = curTab() === tab
 
-        override fun onTitleChange(session: GeckoSession, title: String?) {
-            tab.title = title ?: ""
-            if (ch.screen == 1) syncTabs()
-        }
+inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, GeckoSession.ProgressDelegate, GeckoSession.NavigationDelegate {
+    private fun isCurrent() = curTab() === tab
 
-        override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
-        override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
-        override fun onCrash(session: GeckoSession) { recover(tab) }
-        override fun onKill(session: GeckoSession) { recover(tab) }
-
-        override fun onCloseRequest(session: GeckoSession) {
-            runOnUiThread { val i = tabs.indexOf(tab); if (i >= 0) closeTab(i) }
-        }
-
-        override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
-            val link = element.linkUri
-            val img = element.srcUri
-            val list = ArrayList<CtxAction>()
-            if (link != null) {
-                list.add(CtxAction("+", "Open link in new tab") { newTab(link) })
-                list.add(CtxAction("\uD83D\uDD17", "Copy link") { copyText(link) })
-                list.add(CtxAction("Aa", "Copy text") { copyLinkText(element) })
-            }
-            if (img != null) { list.add(CtxAction("\u25A3", "Open image/media in new tab") { newTab(img) }) }
-            if (list.isEmpty()) return
-            runOnUiThread { ch.ctxTitle = displayUrl(link ?: img ?: ""); ch.ctx = list }
-        }
-
-        override fun onPageStart(session: GeckoSession, url: String) { if (isCurrent()) ch.loading = 5 }
-        override fun onProgressChange(session: GeckoSession, p: Int) { if (isCurrent()) ch.loading = if (p in 1..99) p else 0 }
-
-        override fun onPageStop(session: GeckoSession, success: Boolean) {
-            if (isCurrent()) ch.loading = 0
-            if (success && tab.url.startsWith("http")) store.addVisit(tab.url, tab.title)
-            if (success && isCurrent()) { ui.postDelayed({ if (curTab() === tab && !tab.home && ch.screen == 0) captureThumb(tab) }, 900) }
-        }
-
-        override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
-            tab.url = url ?: ""
-            if (isCurrent() && !tab.home) ch.url = tab.url
-        }
-
-        override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) { tab.canBack = canGoBack; if (isCurrent()) updateButtons() }
-        override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) { tab.canForward = canGoForward; if (isCurrent()) updateButtons() }
-
-        override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
-            val u = request.uri
-            val scheme = u.substringBefore(':', "").lowercase()
-            if (scheme.isEmpty() || scheme in okSchemes) return null
-            openExternal(u)
-            return GeckoResult.fromValue(AllowOrDeny.DENY)
-        }
-
-        override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-            runOnUiThread { newTab(uri) }
-            return null
-        }
+    override fun onTitleChange(session: GeckoSession, title: String?) {
+        tab.title = title ?: ""
+        if (ch.screen == 1) syncTabs()
     }
 
+    override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { setFullscreen(fullScreen) }
+    override fun onExternalResponse(session: GeckoSession, response: WebResponse) { handleDownload(response) }
+    override fun onCrash(session: GeckoSession) { recover(tab) }
+    override fun onKill(session: GeckoSession) { recover(tab) }
+
+    override fun onCloseRequest(session: GeckoSession) {
+        runOnUiThread { val i = tabs.indexOf(tab); if (i >= 0) closeTab(i) }
+    }
+
+    override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
+        val link = element.linkUri
+        val img = element.srcUri
+        val list = ArrayList<CtxAction>()
+        if (link != null) {
+            list.add(CtxAction("+", "Open link in new tab") { newTab(link) })
+            list.add(CtxAction("\uD83D\uDD17", "Copy link") { copyText(link) })
+            list.add(CtxAction("Aa", "Copy text") { copyLinkText(element) })
+        }
+        if (img != null) { list.add(CtxAction("\u25A3", "Open image/media in new tab") { newTab(img) }) }
+        if (list.isEmpty()) return
+        runOnUiThread { ch.ctxTitle = displayUrl(link ?: img ?: ""); ch.ctx = list }
+    }
+
+    override fun onPageStart(session: GeckoSession, url: String) { if (isCurrent()) ch.loading = 5 }
+    override fun onProgressChange(session: GeckoSession, p: Int) { if (isCurrent()) ch.loading = if (p in 1..99) p else 0 }
+
+    override fun onPageStop(session: GeckoSession, success: Boolean) {
+        if (isCurrent()) ch.loading = 0
+        if (success && tab.url.startsWith("http")) store.addVisit(tab.url, tab.title)
+        if (success && isCurrent()) { ui.postDelayed({ if (curTab() === tab && !tab.home && ch.screen == 0) captureThumb(tab) }, 900) }
+    }
+
+    override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+        tab.url = url ?: ""
+        if (isCurrent() && !tab.home) ch.url = tab.url
+    }
+
+    override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) { tab.canBack = canGoBack; if (isCurrent()) updateButtons() }
+    override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) { tab.canForward = canGoForward; if (isCurrent()) updateButtons() }
+
+    override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+        val u = request.uri
+        val scheme = u.substringBefore(':', "").lowercase()
+        if (scheme.isEmpty() || scheme in okSchemes) return null
+        openExternal(u)
+        return GeckoResult.fromValue(AllowOrDeny.DENY)
+    }
+
+    override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+        runOnUiThread { newTab(uri) }
+        return null
+    }
+}
     private val extMessageDelegate = object : WebExtension.MessageDelegate {
         override fun onConnect(port: WebExtension.Port) {
             if (port.name == "browser") {
                 videoPort = port
+                toast("Video Extension Connected!")
                 port.setDelegate(object : WebExtension.PortDelegate {
                     override fun onPortMessage(message: Any, port: WebExtension.Port) {
                         if (message is JSONObject) {
@@ -631,7 +626,6 @@ private fun syncTabs() {
                                         videoUrl = message.optString("url")
                                         videoDuration = message.optDouble("duration", 0.0).toFloat()
                                         videoCurrentTime = message.optDouble("currentTime", 0.0).toFloat()
-                                        
                                         val w = message.optInt("width", 0)
                                         val h = message.optInt("height", 0)
                                         if (w > 0 && h > 0) {
@@ -639,17 +633,15 @@ private fun syncTabs() {
                                         } else {
                                             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                         }
-                                        
                                         showNativePlayer = true
                                         isVideoPlaying = true
-                                        setFullscreen(true) // Hides site UI completely
+                                        setFullscreen(true)
                                         videoOverlayView.visibility = View.VISIBLE
                                     }
                                 }
                             }
                         }
                     }
-                
                 })
             }
         }
@@ -939,7 +931,6 @@ private fun syncTabs() {
         @Suppress("DEPRECATION") startActivityForResult(i, REQ_XPI)
     }
 
-    
     private fun installFromInput(raw: String) {
         val t = raw.trim(); if (t.isEmpty()) return
         if (t.contains(".xpi")) { installAddon(t); return }
