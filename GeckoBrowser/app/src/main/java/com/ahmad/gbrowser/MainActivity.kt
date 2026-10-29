@@ -732,7 +732,7 @@ private fun handleDownload(r: WebResponse) {
 
     // NEW: Video Extension Message Delegate
     private val extMessageDelegate = object : WebExtension.MessageDelegate {
-        override fun onMessage(nativeApp: String?, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
+        override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
             if (message is JSONObject) {
                 val type = message.optString("type")
                 if (type == "DOWNLOAD_VIDEO") {
