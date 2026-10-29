@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Synced Video Player",
-  "version": "2.0",
+  "version": "4.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "video_player@ahmad.gbrowser",
@@ -9,14 +9,8 @@
     }
   },
   "permissions": [
-    "<all_urls>",
-    "webRequest",
-    "webRequestBlocking"
+    "<all_urls>"
   ],
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": true
-  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
