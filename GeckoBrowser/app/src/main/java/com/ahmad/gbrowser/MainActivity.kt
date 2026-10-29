@@ -144,11 +144,11 @@ class MainActivity : ComponentActivity() {
     rt = runtime!!
     rt.webExtensionController.setPromptDelegate(addonPrompt)
 
-    rt.webExtensionController.install("resource://android/assets/video_player").accept({
-        toast("Extension Installed Successfully!")
-    }, { error ->
-        toast("Extension Failed: $error")
-    })
+    rt.webExtensionController.ensureBuiltIn("resource://android/assets/video_player", "video_player@ahmad.gbrowser").accept({
+    toast("Extension Installed Successfully!")
+}, { error ->
+    toast("Extension Failed: $error")
+})
 
     buildUi()
 
