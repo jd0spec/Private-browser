@@ -616,42 +616,52 @@ inner class TabDelegates(private val tab: Tab) : GeckoSession.ContentDelegate, G
     }
 }
     private val extMessageDelegate = object : WebExtension.MessageDelegate {
-        override fun onConnect(port: WebExtension.Port) {
-            if (port.name == "browser") {
-                videoPort = port
-                toast("JS Bridge Connected!")
-                port.setDelegate(object : WebExtension.PortDelegate {
-                    override fun onPortMessage(message: Any, port: WebExtension.Port) {
-                        if (message is JSONObject) {
-                            runOnUiThread {
-                                val type = message.optString("type")
-                                when (type) {
-                                    "PING" -> {
-                                        toast("JS to Kotlin bridge is working!")
+    override fun onConnect(port: WebExtension.Port) {
+        if (port.name == "browser") {
+            videoPort = port
+            toast("JS Bridge Connected!")
+            port.setDelegate(object : WebExtension.PortDelegate {
+                override fun onPortMessage(message: Any, port: WebExtension.Port) {
+                    if (message is JSONObject) {
+                        runOnUiThread {
+                            val type = message.optString("type")
+                            when (type) {
+                                "PING" -> {
+                                    toast("JS to Kotlin bridge is working!")
+                                }
+                                "OPEN_NATIVE_PLAYER" -> {
+                                    videoUrl = message.optString("url")
+                                    videoDuration = message.optDouble("duration", 0.0).toFloat()
+                                    videoCurrentTime = message.optDouble("currentTime", 0.0).toFloat()
+                                    val w = message.optInt("width", 0)
+                                    val h = message.optInt("height", 0)
+                                    if (w > 0 && h > 0) {
+                                        requestedOrientation = if (w > h) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                                    } else {
+                                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                     }
-                                    "OPEN_NATIVE_PLAYER" -> {
-                                        videoUrl = message.optString("url")
-                                        videoDuration = message.optDouble("duration", 0.0).toFloat()
-                                        videoCurrentTime = message.optDouble("currentTime", 0.0).toFloat()
-                                        val w = message.optInt("width", 0)
-                                        val h = message.optInt("height", 0)
-                                        if (w > 0 && h > 0) {
-                                            requestedOrientation = if (w > h) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                                        } else {
-                                            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                        }
-                                        showNativePlayer = true
-                                        isVideoPlaying = true
-                                        setFullscreen(true)
-                                        videoOverlayView.visibility = View.VISIBLE
+                                    showNativePlayer = true
+                                    isVideoPlaying = true
+                                    setFullscreen(true)
+                                    videoOverlayView.visibility = View.VISIBLE
+                                }
+                                "DOWNLOAD_VIDEO" -> {
+                                    val url = message.optString("url")
+                                    if (url.isNotEmpty()) {
+                                        val name = URLUtil.guessFileName(url, null, "video/mp4")
+                                        Dl.add(name, url, curTab()?.url ?: "")
+                                        toast("Download started: $name")
                                     }
                                 }
                             }
                         }
                     }
-                })
-            }
+                }
+            })
         }
+    }
+    override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? = null
+    }
         override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? = null
     }
 
