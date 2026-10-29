@@ -1,38 +1,36 @@
-.__gbWrap { 
-    position: relative !important; 
-    display: inline-block !important; 
-    width: 100% !important; 
-    height: 100% !important; 
+/* The Floating Pill */
+.__gbPill {
+    position: fixed !important;
+    bottom: 80px !important; /* Floats above the browser's bottom bar */
+    right: 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 8px 16px !important;
+    background: #1E1E1E !important; /* AMOLED Dark */
+    border: 1px solid #49454F !important;
+    border-radius: 32px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+    z-index: 2147483647 !important;
+    opacity: 1;
+    transition: opacity 0.3s ease !important;
 }
-.__gbBar {
-    position: absolute; bottom: 16px; left: 16px; right: 16px;
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 20px; border-radius: 32px;
-    background: rgba(28, 27, 31, 0.85); backdrop-filter: blur(16px);
-    color: #E6E1E5; font-family: system-ui, sans-serif;
-    z-index: 2147483647; opacity: 0; transition: opacity 0.3s ease;
-    pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-}
-.__gbWrap:hover .__gbBar, .__gbBar:hover { 
-    opacity: 1; pointer-events: auto; 
-}
+
+/* The Buttons */
 .__gbBtn {
-    background: transparent; border: none; color: #D0BCFF;
-    font-size: 20px; cursor: pointer; padding: 8px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.2s;
+    background: transparent !important;
+    border: none !important;
+    color: #D0BCFF !important; /* Material 3 Primary */
+    font-size: 20px !important;
+    cursor: pointer !important;
+    padding: 8px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: background 0.2s !important;
 }
-.__gbBtn:hover { background: rgba(208, 188, 255, 0.15); }
-.__gbSeek { 
-    flex: 1; accent-color: #D0BCFF; cursor: pointer; height: 4px; 
+
+.__gbBtn:hover {
+    background: rgba(208, 188, 255, 0.15) !important;
 }
-.__gbTime { 
-    font-size: 14px; font-variant-numeric: tabular-nums; 
-    color: #CAC4D0; margin: 0 8px;
-}
-.__gbDl {
-    background: #D0BCFF; color: #381E72; border: none;
-    border-radius: 16px; padding: 8px 16px; font-weight: 600;
-    font-size: 14px; cursor: pointer; transition: background 0.2s;
-}
-.__gbDl:hover { background: #E8DDFF; }
